@@ -1,244 +1,153 @@
-# ClinicalIQ -- AI Agent Benchmark
+# Cortex Agent Benchmark: Snowflake vs Databricks
 
-A head-to-head benchmark comparing **Snowflake Cortex Agent** vs **Databricks Supervisor Agent** on clinical trial analytics. Tests both platforms' ability to handle structured SQL queries, unstructured document search, and hybrid orchestration across real pharmaceutical data.
+A head-to-head benchmark framework comparing **Snowflake Cortex Agent** vs **Databricks Genie** on complex analytical questions. Tests both platforms' ability to handle structured SQL queries, unstructured document search, and hybrid orchestration — then scores every answer with an automated LLM judge.
+
+The included sample benchmark uses a **clinical trials dataset** (pharma/life sciences), but the framework and methodology apply to any domain.
 
 ## Why This Benchmark
 
-Enterprise AI agents are moving beyond simple chatbots. Both Snowflake and Databricks now offer multi-tool AI agents that can query structured data via text-to-SQL AND search unstructured documents via RAG -- then orchestrate between them to answer complex business questions.
+Enterprise AI agents are moving beyond simple chatbots. Both Snowflake and Databricks now offer multi-tool AI agents that can query structured data via text-to-SQL AND search unstructured documents via RAG — then orchestrate between them to answer complex business questions.
 
 But how well do they actually work? Marketing demos use cherry-picked questions on clean data. This benchmark uses **messy, realistic data with embedded traps** that test whether the agent truly understands the data model or just pattern-matches SQL.
 
-**The core question:** When a VP of Clinical Operations asks a complex question that spans structured trial data and published medical literature, which platform gives the more accurate, trustworthy, and actionable answer?
+## Results (Clinical Trial Sample)
 
-## The Scenario
+| Metric | Snowflake Cortex Agent | Databricks Genie |
+|--------|----------------------|-----------------|
+| **Average Score** | **26.2 / 30** | **19.5 / 30** |
+| **Wins** | **25** | **2** |
+| **Ties** | 3 | 3 |
+| **Perfect Scores (30/30)** | 11 | 2 |
+| **Critical Failures (<15)** | 0 | 5 |
 
-**ClinicalIQ Asia** is a fictional Contract Research Organization (CRO) managing clinical trials across 5 APAC countries (Japan, South Korea, Singapore, Australia, India). The VP of Data Intelligence needs answers that combine:
+The gap widens with complexity: +1.8 pts on basic queries, **+9.0 pts on multi-table joins**, +8.4 pts on complex derivations.
 
-- **Operational metrics** from internal trial databases (enrollments, adverse events, budgets, site performance)
-- **Published evidence** from ClinicalTrials.gov protocols, FDA drug labels, and PubMed research abstracts
+See [`pharma/BENCHMARK_ANALYSIS.md`](pharma/BENCHMARK_ANALYSIS.md) for the full 30-question breakdown with failure patterns, and [`pharma/Benchmark_Evaluator.pdf`](pharma/Benchmark_Evaluator.pdf) for the exported evaluator report.
 
-Neither source alone gives the full picture. The agent must orchestrate between structured SQL and document search to deliver complete answers.
+## How It Works
 
-## Data Design
+### 1. Data with Embedded Traps
 
-### Structured Data (Synthetic, 11.8M rows)
+The benchmark uses synthetic structured data with deliberate traps — columns that look similar but mean different things, metrics that must be derived rather than read, and join paths that can silently produce wrong results. These aren't trick questions; they're patterns that cause wrong answers in production.
 
-16 interconnected tables modeling a realistic clinical trial operation:
+### 2. Hybrid Questions
 
-| Category | Tables | Rows | Key Complexity |
-|----------|--------|------|----------------|
-| Organizations | sponsors, sites, investigators, drugs | 10.5K | Drug name 3-way ambiguity (trade/generic/molecule) |
-| Trial Management | trials, trial_arms, enrollments, visits | 3M | Enrollment rate must be derived (no column), visit window per-visit |
-| Clinical Data | lab_results, adverse_events, conmeds, vital_signs | 8.4M | Serious != severe (different columns), AE grain (events vs patients) |
-| Operations | regulatory, deviations, milestones, budgets | 345K | NULL actuals in budgets, country_cd in 4 tables |
+Every question requires BOTH structured data analysis AND document search. No labels hint which tools to use. The agent must decide the orchestration itself.
 
-The data is **synthetic but structurally realistic** -- generated with the same distributions, cardinalities, and join patterns as real clinical trial databases. Data traps are embedded by design.
+### 3. Automated LLM Scoring
 
-### Unstructured Documents (Real Public Data, 173K documents)
+An AI judge (Cortex AI_COMPLETE with claude-sonnet-4-6) scores each platform's output on 6 dimensions (1–5 each, max 30):
 
-| Source | Documents | Avg Size | Content |
-|--------|-----------|----------|---------|
-| ClinicalTrials.gov | 100,032 | 4.5 KB | Trial protocols, eligibility criteria, study designs, endpoints |
-| DailyMed (FDA) | 28,704 | 441 B | Drug labels, warnings, interactions, contraindications |
-| PubMed | 44,963 | 2.1 KB | Research abstracts, clinical evidence, treatment outcomes |
+1. **Accuracy** — are the numbers correct?
+2. **Groundedness** — grounded in data/documents, not hallucinated?
+3. **Relevance** — addresses the question asked?
+4. **Usefulness** — actionable and well-formatted?
+5. **Correctness** — methodology correct, traps avoided?
+6. **Decision Consequences** — safe for a decision-maker to act on this answer?
 
-All documents are **real public data** downloaded via official APIs -- not synthetic. This means document search questions have genuine, verifiable answers grounded in actual medical literature.
+### 4. Evaluator Dashboard
 
-### The Gap Between Structured and Unstructured
+A Snowflake App Runtime (SAR) Next.js app with:
+- Side-by-side scoring of Snowflake and Databricks agent outputs
+- Analytics dashboard with per-question breakdown, dimension charts, and failure analysis
+- Results persisted to Snowflake for historical tracking
 
-A key design choice: the structured tables use **synthetic drug names** (Nivolib, Pembrotinib XR) while the documents contain **real drug names** (pembrolizumab/Keytruda, metformin). Hybrid questions that cross-reference both sources test whether the agent can bridge this gap or blindly tries to join on names that don't match.
+## Key Findings
 
-## Testing Approach
+### 7 Recurring Databricks Failure Patterns
 
-### Every Question Is Hybrid
+1. **Data Trap Blindness** — picks the wrong column when two look similar (e.g., severity vs seriousness, planned vs actual budget). Snowflake's semantic view steers the agent to the right one.
+2. **Broken JOINs & Wrong Denominators** — wrong patient counts that flip conclusions entirely.
+3. **Shallow Analysis** — stops at the first answer instead of digging deeper when results are surprising.
+4. **Document Search Weakness** — frequently returns empty results, falls back on generic knowledge, or hallucinates citations.
+5. **Events vs Patients Confusion** — counts events-per-patient as a percentage, producing nonsensical rates like 600%.
+6. **Budget Column Confusion** — reports $12.6B spending when the actual figure is $9.9B.
+7. **Temporal Windowing Failures** — can't split data by time periods correctly, producing identical numbers for both groups.
 
-All 30 benchmark questions require BOTH structured data + document search. There are no pure-SQL or pure-search questions. This forces both platforms to orchestrate on every single question -- the core differentiator.
+### Why Snowflake Wins — Three Structural Layers
 
-Questions are unlabeled -- they don't hint which tools to use. The agent must decide whether to query the database, search documents, or both.
+1. **Base semantic view** (zero tuning) — column descriptions, relationships, and sample values prevent ~15 questions' worth of errors out of the box.
+2. **Iterative feedback loop** — `sql_generation` rules and verified queries let you teach the agent domain expertise. Each fix is permanent and compounds across similar questions. Databricks has no equivalent.
+3. **Cortex Search + orchestration** — 3 dedicated search services with typed, filterable attributes, plus explicit multi-tool routing for hybrid questions.
 
-### Embedded Data Traps
+## Sample Benchmark: Clinical Trials (Pharma)
 
-Each question embeds 1-6 data traps drawn from real-world clinical data challenges. These aren't trick questions -- they're patterns that cause wrong answers in production if the agent doesn't understand the data model:
-
-- **Enrollment rate derivation**: No enrollment_rate column exists. Must compute from enroll_dt IS NOT NULL / total screened.
-- **Serious vs Severe**: seriousness='SERIOUS' (regulatory consequence) != severity='SEVERE' (clinical intensity). Using the wrong column gives 19.9% instead of 25.1%.
-- **NULL budget trap**: SUM(actual_usd) vs SUM(planned_usd) gives -19% "under budget" if NULLs aren't filtered. Correct answer is +6.1% over budget.
-- **AE grain**: Counting AE events (40,131) vs counting patients-with-AEs (37,708) gives different rankings.
-- **Visit window**: Each visit has its own visit_window_days. Using a fixed window gives wrong compliance rates.
-
-### Difficulty Tiers
-
-| Tier | Questions | What It Tests |
-|------|-----------|---------------|
-| 3 (Warm-up) | Q01-Q06 | Multi-table join + basic document search |
-| 4 (Single trap) | Q07-Q14 | Data trap + targeted document retrieval |
-| 5 (Multi-step) | Q15-Q24 | Subquery/CTE patterns + cross-tool chaining |
-| 6 (Synthesis) | Q25-Q30 | Composite metrics + multi-source executive analysis |
-
-### Scoring
-
-An AI judge (Cortex AI_COMPLETE with claude-sonnet-4-6) scores each platform's output on 6 dimensions (1-5 each, max 30):
-
-1. **Accuracy** -- are the numbers correct?
-2. **Groundedness** -- grounded in data/documents, not hallucinated?
-3. **Relevance** -- addresses the question asked?
-4. **Usefulness** -- actionable and well-formatted?
-5. **Correctness** -- methodology correct, traps avoided?
-6. **Decision Consequences** -- safe for a VP to act on this answer?
-
-The consequences dimension is weighted heavily in interpretation -- a numerically wrong answer that a board member acts on is worse than a correct answer that's poorly formatted.
-
-## The Benchmark
-
-**30 hybrid questions** -- every question requires both structured data analysis AND document search. No labels hint which tools to use. The agent must figure out the orchestration itself.
-
-Questions are designed around known failure patterns:
-
-| Pattern | Description | Example |
-|---------|-------------|---------|
-| Multi-hop joins | 3-5 table join chains | Site -> Trial -> Arm -> Drug -> Regulatory |
-| Derived metrics | No column exists, must compute | Enrollment rate = COUNT(enroll_dt) / COUNT(*) |
-| Serious vs Severe | Different regulatory columns | seriousness='SERIOUS' != severity='SEVERE' |
-| NULL traps | Budget with NULL actuals | Must filter NULLs before aggregation, not after |
-| Negation/exclusion | NOT EXISTS, IS NULL patterns | "Which investigators have ZERO serious AEs?" |
-| AE grain | Events vs patients | 40K events but only 37K distinct patients |
-| Visit window | Per-visit window derivation | ABS(actual - scheduled) <= visit_window_days |
-| Cross-tool synthesis | Structured result feeds document search | "Find top AE from data, then search literature about it" |
-
-## Data
-
-**PHARMA_BENCHMARK_DB.CLINICAL** in Snowflake:
+### Data
 
 | Layer | Content | Volume |
 |-------|---------|--------|
-| Structured | 16 tables (sponsors, sites, drugs, trials, enrollments, visits, lab results, AEs, conmeds, vital signs, regulatory, deviations, milestones, budgets) | 11.8M rows |
-| Documents | ClinicalTrials.gov study protocols | 100,032 |
-| Documents | DailyMed FDA drug labels | 28,704 |
-| Documents | PubMed research abstracts | 44,963 |
-| **Total** | | **11.8M rows + 173K documents** |
+| Structured | 17 tables (trials, enrollments, adverse events, labs, budgets, etc.) | ~15M rows |
+| Documents | ClinicalTrials.gov protocols, FDA drug labels, PubMed abstracts | 173K docs |
 
-All documents are real public data downloaded from ClinicalTrials.gov API v2, DailyMed JSON API, and PubMed E-utilities.
+### Architecture
 
-## Architecture
-
-### Snowflake
-
+**Snowflake:**
 ```
 CLINICALIQ_AGENT (Cortex Agent)
   |-- clinical_analytics (Cortex Analyst + Semantic View)
-  |-- trial_search (Cortex Search -- 100K trials)
-  |-- drug_label_search (Cortex Search -- 28.7K labels)
-  |-- pubmed_search (Cortex Search -- 45K abstracts)
+  |-- trial_search (Cortex Search — 100K trials)
+  |-- drug_label_search (Cortex Search — 28.7K labels)
+  |-- pubmed_search (Cortex Search — 45K abstracts)
   |-- data_to_chart
 ```
 
-### Databricks
-
+**Databricks:**
 ```
 Supervisor Agent
-  |-- ClinicalIQ Structured (Genie Agent -- 16 tables)
-  |-- ClinicalIQ Documents (Knowledge Assistant -- UC Volume with .txt files)
+  |-- ClinicalIQ Structured (Genie Agent — 17 tables)
+  |-- ClinicalIQ Documents (Knowledge Assistant — UC Volume)
 ```
 
 ## Project Structure
 
 ```
 pharma/
-|-- setup/                          # All setup scripts (Snowflake + Databricks)
-|   |-- sf_01_create_schema.sql       # Snowflake DDL (17 tables + 2 stages)
-|   |-- sf_02_create_agent.sql        # Creates Cortex Search services + Agent
-|   |-- dbx_01_load_data.ipynb         # Databricks data loading notebook (creates tables + loads data)
-|   |-- dbx_02_agent_setup.md          # Genie + Knowledge Assistant + Supervisor setup
+|-- setup/
+|   |-- sf_01_create_schema.sql        # Snowflake DDL (17 tables + stages)
+|   |-- sf_02_create_agent.sql         # Cortex Search services + Agent
+|   |-- dbx_01_load_data.ipynb         # Databricks data loading notebook
+|   |-- dbx_02_agent_setup.md          # Genie + Knowledge Assistant + Supervisor
 |
 |-- questions/
-|   |-- benchmark_questions.md      # 30 hybrid questions with expected answers and rubrics
+|   |-- benchmark_questions.md         # 30 hybrid questions with expected answers
 |
-|-- evaluator/                      # Benchmark Evaluator SAR App (Next.js)
-    |-- app/
-    |   |-- page.tsx                # Main evaluator UI
-    |   |-- api/questions/route.ts  # Loads Q01-Q30 from TBL_EXPECTED_ANSWERS
-    |   |-- api/score/route.ts      # AI scoring via Cortex AI_COMPLETE
-    |   |-- api/results/route.ts    # Saved benchmark results
-    |-- components/
-    |   |-- evaluator.tsx           # Question selector, output panels, score comparison
-    |-- lib/
-        |-- snowflake.ts            # SPCS OAuth connection handling
-        |-- constants.ts            # App config (model, database)
+|-- evaluator/                         # Benchmark Evaluator App (Next.js on SPCS)
+|   |-- app/                           # Pages and API routes
+|   |-- components/                    # Evaluator UI + Analytics Dashboard
+|   |-- lib/                           # Snowflake connection, constants
+|
+|-- BENCHMARK_ANALYSIS.md             # Full analysis with patterns and findings
 ```
-
-## Evaluator App
-
-A Snowflake App Runtime (SAR) Next.js app deployed at the account's app URL.
-
-**Features:**
-- Dropdown of 30 benchmark questions loaded from Snowflake
-- Side-by-side paste panels for Snowflake and Databricks agent outputs
-- Screenshot paste support (Ctrl+V) for visual evidence
-- AI scoring via Cortex AI_COMPLETE (claude-sonnet-4-6) on 6 dimensions
-- Score comparison table with color-coded deltas
-- Decision consequences detail for each scoring
-- Results persisted to TBL_BENCHMARK_RESULTS
-
-**Scoring dimensions (1-5 each, max 30):**
-1. Accuracy -- are the numbers correct?
-2. Groundedness -- grounded in data/documents, not hallucinated?
-3. Relevance -- addresses the question asked?
-4. Usefulness -- actionable and well-formatted?
-5. Correctness -- methodology correct, traps avoided?
-6. Decision Consequences -- safe to act on this answer?
 
 ## Setup
 
-### Snowflake (data already loaded)
+### Snowflake
 
 ```sql
--- Database: PHARMA_BENCHMARK_DB.CLINICAL
--- 16 structured tables + TBL_DOCUMENT (173K docs with parsed_text)
--- 3 Cortex Search services: TRIAL_SEARCH, DRUG_LABEL_SEARCH, PUBMED_SEARCH
--- Semantic View: CLINICAL_ANALYST (created via Snowsight autopilot)
--- Agent: CLINICALIQ_AGENT
--- Tables: TBL_EXPECTED_ANSWERS (30 rows), TBL_BENCHMARK_RESULTS
+-- Run setup/sf_01_create_schema.sql (creates tables, stages, loads data)
+-- Run setup/sf_02_create_agent.sql (creates search services, semantic view, agent)
 ```
 
 ### Databricks
 
 1. Load data using `setup/dbx_01_load_data.ipynb`
-2. Upload combined docs to UC Volume for Knowledge Assistant
-3. Follow `setup/dbx_02_agent_setup.md` for:
-   - Part 1: Genie Agent (structured)
-   - Part 2: Knowledge Assistant (documents)
-   - Part 3: Supervisor Agent (orchestrator)
+2. Follow `setup/dbx_02_agent_setup.md` for Genie + Knowledge Assistant + Supervisor
 
 ### Evaluator App
 
 ```bash
 cd pharma/evaluator
 npm install
-snow app deploy --entity-id="clinicaliq_evaluator"
+snow app deploy
 ```
 
 ## Running the Benchmark
 
-1. Open both agents: Snowflake (Snowsight Agent page) and Databricks (Supervisor Agent)
+1. Open both agents: Snowflake (Snowsight) and Databricks (Playground)
 2. Open the Evaluator app
-3. For each question Q01-Q30:
+3. For each question Q01–Q30:
    - Ask the question in both platforms
-   - Copy/paste each output into the Evaluator
+   - Paste each output into the Evaluator
    - Click "Score Both Platforms"
-4. Results saved automatically to TBL_BENCHMARK_RESULTS
-
-## Embedded Data Traps
-
-The synthetic structured data contains deliberate traps that test SQL precision:
-
-| Trap | What goes wrong | Correct approach |
-|------|----------------|-----------------|
-| Enrollment rate | Agent looks for enrollment_rate column | Derive: COUNT(enroll_dt IS NOT NULL) / COUNT(*) |
-| Serious vs Severe | Agent uses severity='SEVERE' | Must use seriousness='SERIOUS' (different concept) |
-| Visit window | Agent uses fixed 3-day window | Must use per-visit visit_window_days column |
-| AE grain | Counts AE events instead of patients | Must use COUNT(DISTINCT enrollment_id) |
-| NULL budget | SUM includes NULL actuals vs planned | Filter WHERE actual_usd IS NOT NULL before SUM |
-| Drug name 3-way | Searches only drug_name | Must check drug_name, generic_name, molecule_name |
-| Country ambiguity | Uses sponsor country_cd | Must use enrollment.country_cd for patient location |
-| Arm fan-out | JOIN through arms creates duplicates | Must aggregate at enrollment level with DISTINCT |
-| Conmed stacking | JOIN conmeds creates cartesian product | Aggregate conmed count per patient first |
+4. Switch to Analytics tab for charts, failure analysis, and per-question breakdown
+5. Results saved automatically to Snowflake
