@@ -1,4 +1,4 @@
-# Cortex Agent Benchmark: Snowflake vs Databricks
+# Snowflake Cortex Agent vs Databricks Genie — Benchmark
 
 A head-to-head benchmark framework comparing **Snowflake Cortex Agent** vs **Databricks Genie** on complex analytical questions. Tests both platforms' ability to handle structured SQL queries, unstructured document search, and hybrid orchestration — then scores every answer with an automated LLM judge.
 
