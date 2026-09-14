@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="#FF3621">
+  <!-- Databricks logo: stacked diamond/lakehouse shape -->
+  <path d="M50 10 L15 30 L50 50 L85 30 Z" opacity="0.95"/>
+  <path d="M15 38 L50 58 L85 38 L85 30 L50 50 L15 30 Z" opacity="0.75"/>
+  <path d="M15 50 L50 70 L85 50 L85 42 L50 62 L15 42 Z" opacity="0.55"/>
+  <path d="M15 62 L50 82 L85 62 L85 54 L50 74 L15 54 Z" opacity="0.4"/>
+</svg>

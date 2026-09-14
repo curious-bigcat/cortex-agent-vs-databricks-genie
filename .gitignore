@@ -1,0 +1,53 @@
+# OS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+
+# Cortex Code / Snowflake local
+.snowflake/
+
+# Camtasia project
+*.cmproj/
+
+# DBX trace data (raw benchmark output, not needed for reproduction)
+questions/databricks-info-data.md
+
+# Recordings / videos
+*.mp4
+*.mov
+*.avi
+*.mkv
+recordings/
+
+# Node
+node_modules/
+
+# Build output
+live_compare/dist/
+.next/
+
+# Large data files (use Snowflake stages instead)
+pharma/data/*.csv
+pharma/data/docs/
+
+# Environment variables
+.env
+.env.*
+reports/blog_cortex_vs_genie.md
+
+# Benchmark files (not ready for public)
+questions/cre_benchmark_questions.md
+reports/cre_benchmark_report.md
+data/cre/verify_ground_truth.py

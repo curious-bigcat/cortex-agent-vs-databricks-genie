@@ -1,0 +1,23 @@
+definition_version: "2"
+
+entities:
+  clinicaliq_evaluator:
+    type: snowflake-app
+    identifier:
+      name: CLINICALIQ_EVALUATOR
+      database: USER$BSURESH
+      schema: PUBLIC
+    artifacts:
+      - src: ./*
+        dest: ./
+        ignore:
+          - node_modules
+          - .env*
+          - __pycache__
+          - "*.pyc"
+          - .next
+          - .git
+          - snowflake.log
+
+    query_warehouse: DEMO_WH
+    code_workspace: USER$BSURESH.PUBLIC.SNOWFLAKE_APPS
