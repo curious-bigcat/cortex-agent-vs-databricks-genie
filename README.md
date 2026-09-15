@@ -17,13 +17,46 @@ See [`pharma/docs/benchmark_analysis.md`](pharma/docs/benchmark_analysis.md) for
 
 ## How It Works
 
-### 1. Data with Skewed Distributions
+### 1. Clinical Trial Data Model
 
-16 structured tables (~15M rows) + 173K documents. Five key tables have intentionally skewed distributions (SAE rates by TA, enrollment by country, quality scores by country, visit compliance by TA, budget overrun by phase) to ensure cross-table questions produce meaningfully different results.
+A realistic clinical trial data model spanning **16 structured tables** (~15M rows) with complex inter-table relationships, plus **173K unstructured documents** (ClinicalTrials.gov protocols, FDA drug labels, PubMed abstracts).
+
+| Layer | Tables | Rows | Complexity |
+|---|---|---|---|
+| **Core entities** | `tbl_trial` (clinical studies with phase, status, therapeutic area), `tbl_sponsor` (funding organizations), `tbl_drug` (pharmaceuticals with 3 name columns: brand, generic, molecule), `tbl_investigator` (principal investigators with specialty and experience), `tbl_site` (hospital/clinic locations with quality scores and capacity) | ~13K | Reference data with multi-column lookup traps (3 drug name columns, country_cd on 4 tables) |
+| **Transactional** | `tbl_enrollment` (patient screening and enrollment with status and country), `tbl_visit` (scheduled and actual patient visits with per-visit window days), `tbl_adverse_event` (safety events with severity vs seriousness distinction), `tbl_lab_result` (clinical test results ~5M rows), `tbl_conmed` (concomitant medications per patient), `tbl_vital_sign` (blood pressure, heart rate, temperature readings) | ~14M | High-volume 1:many relationships requiring pre-aggregation before cross-table joins |
+| **Operational** | `tbl_trial_arm` (treatment groups: experimental, placebo, active comparator), `tbl_milestone` (timeline targets with delay tracking), `tbl_protocol_deviation` (compliance violations by category and severity), `tbl_budget` (planned vs actual spend by cost category), `tbl_regulatory_submission` (approval applications with status and review timelines) | ~120K | Multi-arm fan-out risk, planned vs actual columns, status-based filtering with negation traps |
+| **Documents** | `tbl_document` — three real-world clinical research document sources: **ClinicalTrials.gov protocols** (100K trial registrations with study design, eligibility criteria, endpoints, and status updates scraped from clinicaltrials.gov), **FDA DailyMed drug labels** (28.7K official prescribing information documents including boxed warnings, adverse reactions, drug interactions, and dosing from dailymed.nlm.nih.gov), **PubMed research abstracts** (45K peer-reviewed publication abstracts covering clinical outcomes, safety signals, and treatment efficacy from pubmed.ncbi.nlm.nih.gov). Each document includes metadata (doc_id, source, title, publication date) and full parsed text for semantic search. | 173K | Every benchmark question requires searching these documents alongside structured data — the agent must orchestrate SQL queries AND document retrieval, then synthesize findings. Tests whether the platform searches the actual corpus or falls back to generic knowledge. |
+
+**Data traps embedded in the schema** — these are realistic patterns found in production clinical data that cause AI agents to produce wrong answers:
+
+- **Screen failure trap**: Not every patient in `tbl_enrollment` actually enrolled — some failed screening and have `enroll_dt IS NULL`. If the agent counts all rows as "enrolled patients," enrollment rates and per-patient metrics will be wrong. The correct approach is to filter to `enroll_dt IS NOT NULL`.
+
+- **Serious vs Severe confusion**: `tbl_adverse_event` has two separate columns — `seriousness` (a regulatory classification: does the event require mandatory reporting to authorities?) and `severity` (clinical intensity: how bad was it physically?). A mild skin rash can be "serious" if it causes hospitalization, while a severe headache may not be "serious" at all. Agents that confuse these produce completely wrong safety metrics.
+
+- **Planned vs Actual budget**: `tbl_budget` has both `planned_usd` (what was budgeted) and `actual_usd` (what was actually spent). They look interchangeable but tell very different stories. Asking "how much are we spending" should use actual; asking "how much did we plan" should use planned. Agents that pick the wrong column report numbers that are off by millions.
+
+- **Variable visit windows**: Each visit type in `tbl_visit` has its own `visit_window_days` column — a screening visit might allow a 7-day window while a dosing visit allows only 2 days. There is no single "on-time" flag; the agent must calculate `ABS(actual_dt - scheduled_dt) <= visit_window_days` per row. Agents that use a fixed window (e.g., always 7 days) get the compliance rate wrong.
+
+- **Country column on multiple tables**: `country_cd` appears on `tbl_site`, `tbl_enrollment`, `tbl_sponsor`, and `tbl_investigator`. "Trials in Japan" means patients enrolled in Japan (`tbl_enrollment.country_cd`), not sites located in Japan or sponsors headquartered there. Using the wrong table's country column changes the results entirely.
+
+- **Trial arm fan-out**: Each trial has 2–4 treatment arms (experimental, placebo, active comparator) in `tbl_trial_arm`. Joining `tbl_drug → tbl_trial_arm → tbl_enrollment` without careful aggregation multiplies patient counts by the number of arms, producing inflated numbers. The agent must use `DISTINCT` or pre-aggregate to avoid this cartesian product.
 
 ### 2. Hybrid Questions
 
-Every question requires structured data analysis AND document search. The agent decides the orchestration. Questions are ordered by complexity (Tier 2–6) and selected to expose repeatable Databricks failure patterns.
+Every question in the benchmark has two parts: a **data analysis** part that requires writing SQL against the structured tables, and a **research** part that requires searching the document corpus for published evidence. For example: *"What is the serious adverse event rate per 100 enrolled patients by trial phase?"* (SQL) + *"What does published research say about expected SAE rates by phase?"* (document search).
+
+The question never tells the agent which tool to use — the agent must figure out on its own that it needs to run a SQL query first, then search published literature, and combine the findings into a coherent answer. This tests the agent's ability to **orchestrate multiple tools**, not just execute a single query.
+
+Questions are ordered by complexity across 5 tiers — each tier adds a new layer of difficulty that tests whether the agent can handle increasingly realistic analytical workloads:
+
+| Tier | What it tests | Example | Why Genie struggles |
+|---|---|---|---|
+| **Tier 2** | Can the agent compute a metric that doesn't exist as a column? It must derive values using formulas and per-row logic across 1-2 tables. | *"What % of visits are severely late?"* — requires calculating `ABS(actual_dt - scheduled_dt) > visit_window_days + 7` per row, not using a fixed threshold | Genie uses a fixed 7-day window instead of the per-visit `visit_window_days` column |
+| **Tier 3** | Can the agent join 2-3 tables correctly and compute rates, ratios, or per-capita metrics? Must handle screen failure exclusion and denominator selection. | *"SAE rate per 100 enrolled patients by trial phase"* — join adverse_events → enrollments → trials, exclude screen failures, compute rate per 100 | Genie includes screen failures in the denominator, deflating rates by ~18% across all phases |
+| **Tier 4** | Can the agent compare two groups across 3+ tables? Must split data into cohorts, compute separate metrics, and draw comparisons — without creating cartesian products. | *"Do patients on 3+ concomitant meds have more serious AEs?"* — join conmeds → enrollments → adverse_events, split into HIGH/LOW groups, compare SAE rates | Genie inflates patient counts by failing the LEFT JOIN, misses zero-conmed patients entirely |
+| **Tier 5** | Can the agent combine structured SQL results with document corpus search? Must query the database AND search published literature, then synthesize both into one answer. | *"Which drugs in active trials have never appeared in any PubMed abstract?"* — join drugs → trials, then cross-reference against document search results | Genie finds only 18 drugs instead of 2,759 and fabricates drug names with contradictory properties |
+| **Tier 6** | Can the agent produce a comprehensive executive report pulling numbers from every major table, with literature context? Must orchestrate 5+ queries and multiple searches. | *"Board-level portfolio summary with hard numbers across enrollment, safety, operations, regulatory, and research"* | Genie reports 100% enrollment rate (impossible), uniform 50% approval rates across all countries — numbers are obviously fabricated |
 
 ### 3. Automated LLM Scoring
 
@@ -49,38 +82,25 @@ A Next.js app deployed on Snowflake SPCS with:
 
 ### Snowflake
 
-| Component | Configuration |
-|---|---|
-| **Account** | SFSEAPAC-BSURESH |
-| **Database** | PHARMA_BENCHMARK_DB.CLINICAL |
-| **Agent** | CLINICALIQ_AGENT (Cortex Agent) |
-| **Semantic View** | CLINICAL_ANALYST (DDL-based, cross-table facts + relationships) |
-
 **Architecture:**
 ```
-CLINICALIQ_AGENT (Cortex Agent)
-  ├── clinical_analytics (Cortex Analyst + Semantic View)
-  ├── trial_search (Cortex Search — 100K trials)
-  ├── drug_label_search (Cortex Search — 28.7K labels)
-  ├── pubmed_search (Cortex Search — 45K abstracts)
+Cortex Agent
+  ├── Cortex Analyst + Semantic View (cross-table facts, relationships, column descriptions)
+  ├── Cortex Search — trial protocols (100K documents)
+  ├── Cortex Search — FDA drug labels (28.7K documents)
+  ├── Cortex Search — PubMed abstracts (45K documents)
   └── data_to_chart
 ```
 
-### Databricks
+The **semantic view** is the key differentiator — it defines cross-table relationships, derived metrics, and join paths that guide the agent to the correct SQL. The agent doesn't have to figure out how tables connect; the semantic view tells it.
 
-| Component | Configuration |
-|---|---|
-| **Catalog** | dbx-bsuresh-catalog |
-| **Schema** | clinical |
-| **Volume** | /Volumes/dbx-bsuresh-catalog/clinical/clinical |
-| **Agent** | Supervisor Agent (Databricks Playground) |
-| **Genie Space** | Clinical Trials Data Hub |
+### Databricks
 
 **Architecture:**
 ```
 Supervisor Agent
-  ├── ClinicalIQ Structured (Genie — 16 tables + 16 metric views)
-  └── ClinicalIQ Documents (Knowledge Assistant — UC Volume)
+  ├── Genie Space (16 tables + 16 per-table metric views)
+  └── Knowledge Assistant (document corpus in UC Volume)
 ```
 
 **Key limitation:** Metric views are per-table only. Cannot express cross-table joins, composite metrics, or negation patterns. All cross-table reasoning depends on Genie's SQL generation, which fails on 3+ table joins.
@@ -91,11 +111,9 @@ Both platforms have equivalent metadata where their architectures allow:
 
 | Snowflake | Databricks Equivalent |
 |---|---|
-| Semantic view column descriptions | Metric view dimensions/measures |
-| Cross-table relationships & facts | Not expressible in metric views |
+| Semantic view column descriptions | Metric view dimensions/measures + AI-generated metadata from Unity Catalog |
 | Cortex Search (3 services) | Knowledge Assistant (1 index) |
 | Agent instructions | Genie General Instructions (10 data rules) |
-| Verified queries (VQRs) | Not available in Genie |
 
 ## Project Structure
 
@@ -135,7 +153,7 @@ pharma/
 
 ### Databricks
 
-1. Upload CSVs to volume `/Volumes/dbx-bsuresh-catalog/clinical/clinical/`
+1. Upload CSVs to a Unity Catalog volume
 2. Run `setup/dbx_01_load_data.ipynb` to create tables
 3. Add 16 metric views to Genie Space (YAML in `setup/dbx_02_agent_setup.md`)
 4. Paste General Instructions into Genie Space (in `setup/dbx_02_agent_setup.md`)
@@ -157,4 +175,4 @@ snow app deploy
    - Paste each output into the Evaluator
    - Click "Score Both Platforms"
 3. Previous run analysis shows automatically for each question
-4. Results saved to `PHARMA_BENCHMARK_DB.CLINICAL.TBL_BENCHMARK_RESULTS`
+4. Results saved to Snowflake automatically

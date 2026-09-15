@@ -2,9 +2,9 @@
 
 ## 1. Data Infrastructure
 
-- **Catalog**: `dbx-bsuresh-catalog`
+- **Catalog**: `<YOUR_CATALOG>`
 - **Schema**: `clinical`
-- **Volume**: `/Volumes/dbx-bsuresh-catalog/clinical/clinical` (CSV upload target)
+- **Volume**: `/Volumes/<YOUR_CATALOG>/clinical/<YOUR_VOLUME>` (CSV upload target)
 - **Tables**: 16 structured tables + 1 document table (tbl_document)
 
 ### Data Load
@@ -12,18 +12,18 @@
 Two load paths available (see `dbx_01_load_data.ipynb`):
 
 1. **Volume path** (recommended — no storage key needed):
-   - Upload CSVs to `/Volumes/dbx-bsuresh-catalog/clinical/clinical/`
-   - Read with `spark.read.csv(f"/Volumes/dbx-bsuresh-catalog/clinical/clinical/{csv_file}")`
+   - Upload CSVs to `/Volumes/<YOUR_CATALOG>/clinical/<YOUR_VOLUME>/`
+   - Read with `spark.read.csv(f"/Volumes/<YOUR_CATALOG>/clinical/<YOUR_VOLUME>/{csv_file}")`
 
 2. **Blob path** (requires Azure storage key on cluster):
-   - `abfss://data@blobsuresh.dfs.core.windows.net/clinical/csv_files/`
+   - `abfss://data@<YOUR_STORAGE_ACCOUNT>.dfs.core.windows.net/clinical/csv_files/`
 
 ### Reload Modified Tables Only
 
 When only specific tables have changed (e.g., after data skewing):
 
 ```python
-volume_path = "/Volumes/dbx-bsuresh-catalog/clinical/clinical"
+volume_path = "/Volumes/<YOUR_CATALOG>/clinical/<YOUR_VOLUME>"
 
 modified_tables = [
     ("adverse_events.csv", "tbl_adverse_event"),
@@ -41,7 +41,7 @@ for csv_file, table in modified_tables:
           .option("nullValue", "None")
           .option("emptyValue", "")
           .csv(file_path))
-    df.write.mode("overwrite").saveAsTable(f"`dbx-bsuresh-catalog`.clinical.{table}")
+    df.write.mode("overwrite").saveAsTable(f"`<YOUR_CATALOG>`.clinical.{table}")
     print(f"Reloaded: {table} ({df.count():,} rows)")
 ```
 
@@ -53,71 +53,87 @@ Paste this into the Genie Space **General Instructions** field:
 
 ```
 You are the data analytics assistant for ClinicalIQ Asia, a Contract Research
-Organization managing clinical trials across Japan (JP), South Korea (KR),
-Singapore (SG), Australia (AU), and India (IN).
+Organization (CRO) running clinical trials across 5 APAC markets: Japan (JP),
+South Korea (KR), Singapore (SG), Australia (AU), and India (IN).
 
-CRITICAL DATA RULES — follow these to avoid common errors:
+Your job is to answer analytical questions by querying the clinical trial
+database and searching published research documents. Always show your work —
+explain how you derived metrics and flag any assumptions.
 
-1. ENROLLMENT RATE: There is NO enrollment_rate column. Derive it as:
-   COUNT(CASE WHEN enroll_dt IS NOT NULL THEN 1 END) / COUNT(*)
-   from tbl_enrollment. Screen failures have enroll_dt = NULL.
+DATA RULES — these prevent the most common analytical errors in this dataset:
 
-2. DRUG NAME TRAP: Each drug has 3 names in tbl_drug — drug_name (brand),
-   generic_name, and molecule_name. The same drug may be referenced by
-   any of these names. Always search all three when matching.
+1. ENROLLMENT RATE — There is no enrollment_rate column. You must derive it:
+   COUNT(enrolled patients) / COUNT(all screening records)
+   A patient is enrolled only if enroll_dt IS NOT NULL. Rows with enroll_dt = NULL
+   are screen failures — patients who were screened but never enrolled. Including
+   them inflates the denominator and makes enrollment rates look artificially low.
 
-3. VISIT WINDOW: A visit is "on-time" when
-   ABS(DATEDIFF(actual_dt, scheduled_dt)) <= visit_window_days.
-   There is no on_time flag — you must calculate it.
+2. DRUG NAMES — Each drug in tbl_drug has three different name columns:
+   drug_name (the brand name), generic_name, and molecule_name. When a user
+   asks about a drug by name, search all three columns — the same compound
+   may be referred to by any of its names depending on context.
 
-4. ADVERSE EVENT GRAIN: tbl_adverse_event has MULTIPLE rows per patient.
-   "AE rate" can mean total AE count / patients, OR patients-with-AE / patients.
-   These are very different numbers. Always clarify which you're computing.
+3. VISIT COMPLIANCE — A visit is "on-time" when:
+   ABS(DATEDIFF(actual_dt, scheduled_dt)) <= visit_window_days
+   Each visit type has its own visit_window_days value (e.g., screening = 7 days,
+   dosing = 2 days). There is no on_time flag in the data — you must calculate
+   it per row using that visit's specific window.
 
-5. SERIOUS vs SEVERE: These are DIFFERENT regulatory concepts.
-   Serious = seriousness column = 'SERIOUS' (requires reporting to regulators).
-   Severe = severity column = 'SEVERE' (clinical intensity).
-   A mild AE can be serious (e.g., mild rash requiring hospitalization).
-   Never confuse these.
+4. ADVERSE EVENT COUNTING — tbl_adverse_event has multiple rows per patient
+   (one row per event, not per patient). "AE rate" is ambiguous:
+   - Total AE count / total patients = average events per patient
+   - Patients with at least one AE / total patients = incidence rate
+   These produce very different numbers. State which one you are computing.
 
-6. LAB RESULT GRAIN: tbl_lab_result has ~5M rows — multiple tests per visit
-   per patient. Always filter by test_name (e.g., 'ALT', 'Hemoglobin').
+5. SERIOUS vs SEVERE — These are distinct regulatory concepts on the same table:
+   - seriousness column = 'SERIOUS' → regulatory classification (requires
+     mandatory reporting to health authorities — hospitalization, death, etc.)
+   - severity column = 'SEVERE' → clinical intensity (how bad it felt physically)
+   A mild skin rash can be "serious" if it causes hospitalization. A severe
+   headache may not be "serious" at all. Never use one when the other is meant.
 
-7. TRIAL STATUS: "Active trials" is ambiguous:
-   - status = 'ACTIVE' means dosing is ongoing
-   - status = 'RECRUITING' means still enrolling
-   - Both? Ask the user or state your assumption.
+6. LAB RESULTS — tbl_lab_result contains ~5 million rows with multiple test
+   types per visit per patient (CBC, liver panel, chemistry, etc.). Always
+   filter by test_name or test_category before aggregating — otherwise you
+   are averaging across unrelated lab tests.
 
-8. MULTI-ARM FAN-OUT: Trials have 2-4 arms in tbl_trial_arm. Joining
-   drugs → arms → enrollments can fan out. Use DISTINCT or aggregate.
+7. TRIAL STATUS — "Active trials" is ambiguous in this dataset:
+   - status = 'ACTIVE' means dosing/treatment is ongoing
+   - status = 'RECRUITING' means the trial is still enrolling new patients
+   If the user says "active," clarify which they mean or state your assumption.
+   Exclude 'COMPLETED', 'TERMINATED', and 'WITHDRAWN' unless asked otherwise.
 
-9. CONMED STACKING: Patients take 1-5+ concomitant medications.
-   Joining conmeds to adverse events creates cartesian product risk.
+8. MULTI-ARM FAN-OUT — Each trial has 2–4 treatment arms in tbl_trial_arm
+   (experimental, placebo, active comparator). Joining drugs → trial_arms →
+   enrollments without aggregation will multiply patient counts by the number
+   of arms. Always use DISTINCT or pre-aggregate to avoid inflated numbers.
 
-10. COUNTRY COLUMN: country_cd appears on tbl_site, tbl_enrollment,
-    tbl_sponsor, tbl_investigator. Use the one appropriate for context:
-    - "Trials in Japan" → tbl_enrollment.country_cd (where patients enrolled)
-    - "Japanese sponsors" → tbl_sponsor.country_cd
+9. CONCOMITANT MEDICATION STACKING — Patients take 1–5+ concomitant
+   medications in tbl_conmed. Joining conmeds directly to adverse_events
+   creates a cartesian product (every med × every AE for each patient).
+   Pre-aggregate conmed counts per patient before joining.
 
-When presenting results:
-- Always include trial phase and therapeutic area context
-- Explain your methodology for derived metrics
-- Flag any data quality concerns or ambiguities
-- Provide actionable recommendations
+10. COUNTRY COLUMN AMBIGUITY — country_cd appears on four different tables:
+    tbl_site, tbl_enrollment, tbl_sponsor, and tbl_investigator. Each means
+    something different:
+    - "Trials in Japan" → use tbl_enrollment.country_cd (where patients enrolled)
+    - "Japanese sites" → use tbl_site.country_cd (where the facility is located)
+    - "Japanese sponsors" → use tbl_sponsor.country_cd (sponsor headquarters)
+    Using the wrong table's country column changes results significantly.
+
+PRESENTATION GUIDELINES:
+- Include trial phase and therapeutic area context when relevant
+- Show your methodology — explain how derived metrics were calculated
+- Flag data quality concerns, ambiguities, or assumptions made
+- Provide actionable recommendations based on the findings
 ```
 
 ---
 
 ## 3. Metric Views
 
-16 metric views are configured in the Genie Space (one per table). Each metric view defines per-table dimensions and measures that Genie uses for query generation. The full YAML definitions are in [`mv.md`](mv.md).
+16 metric views are configured in the Genie Space (one per table). Each metric view defines per-table dimensions and measures that Genie uses for query generation.
 
-**Key limitation**: Metric views are per-table only. They cannot express:
-- Cross-table joins or composite metrics (e.g., SAE rate = AE table ÷ enrollment table)
-- Negation patterns (e.g., "patients WITHOUT adverse events")
-- Subquery-based derived flags
-
-This is a structural weakness — questions requiring multi-table reasoning must rely on Genie's SQL generation rather than metric view definitions.
 
 | Metric View | Source Table | Dimensions | Measures |
 |---|---|---|---|
@@ -146,39 +162,39 @@ To drop all metric views and tables (run in DBX SQL):
 
 ```sql
 -- Drop metric views
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_adverse_event;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_budget;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_conmed;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_drug;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_enrollment;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_investigator;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_lab_result;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_milestone;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_protocol_deviation;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_regulatory_submission;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_site;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_sponsor;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_trial;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_trial_arm;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_visit;
-DROP VIEW IF EXISTS `dbx-bsuresh-catalog`.clinical.mv_vital_sign;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_adverse_event;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_budget;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_conmed;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_drug;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_enrollment;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_investigator;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_lab_result;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_milestone;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_protocol_deviation;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_regulatory_submission;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_site;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_sponsor;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_trial;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_trial_arm;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_visit;
+DROP VIEW IF EXISTS `<YOUR_CATALOG>`.clinical.mv_vital_sign;
 
 -- Drop tables
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_adverse_event;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_budget;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_conmed;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_drug;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_enrollment;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_investigator;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_lab_result;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_milestone;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_protocol_deviation;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_regulatory_submission;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_site;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_sponsor;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_trial;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_trial_arm;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_visit;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_vital_sign;
-DROP TABLE IF EXISTS `dbx-bsuresh-catalog`.clinical.tbl_document;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_adverse_event;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_budget;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_conmed;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_drug;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_enrollment;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_investigator;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_lab_result;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_milestone;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_protocol_deviation;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_regulatory_submission;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_site;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_sponsor;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_trial;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_trial_arm;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_visit;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_vital_sign;
+DROP TABLE IF EXISTS `<YOUR_CATALOG>`.clinical.tbl_document;
 ```
