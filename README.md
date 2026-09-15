@@ -54,6 +54,22 @@ A Snowflake App Runtime (SAR) Next.js app with:
 
 ## Key Findings
 
+### Benchmark Design: Exploit Pattern Map
+
+Every question is hybrid (structured SQL + document search). The benchmark systematically exploits known Databricks weaknesses:
+
+| Weakness | Questions | Why Snowflake Wins |
+|---|---|---|
+| **3 Cortex Search services vs 1 Knowledge Assistant** | ALL Q01-Q30 | Dedicated trial/drug/pubmed search services vs single index |
+| **Deep multi-table joins (4-5 hops)** | Q01, Q05, Q07, Q08, Q14, Q15, Q18, Q20, Q21, Q23, Q25, Q28, Q30 | Typed relationships name every join hop |
+| **Multi-step CTE composition** | Q05, Q06, Q10-Q25, Q28, Q29 | Pre-defined metrics compose cleanly |
+| **Column traps under pressure** | Q01, Q02, Q05-Q07, Q11, Q13, Q15, Q21, Q25, Q27, Q28 | Structured facts prevent column confusion |
+| **Cross-tool synthesis** (SQL result to search) | ALL Q01-Q30 | Every question requires orchestration |
+| **Negation patterns** | Q02, Q09, Q12, Q14, Q19, Q22, Q26, Q28 | Labeled filters make negation clearer |
+| **Temporal comparison** | Q03, Q11, Q13, Q17, Q24, Q27 | Pre-defined temporal facts |
+| **Composite / normalized metrics** | Q15, Q21, Q25, Q28, Q30 | Multiple metrics compose into indices |
+| **What-if simulation** | Q29 | 5 sequential computations |
+
 ### 7 Recurring Databricks Failure Patterns
 
 1. **Data Trap Blindness** — picks the wrong column when two look similar (e.g., severity vs seriousness, planned vs actual budget). Snowflake's semantic view steers the agent to the right one.
@@ -67,8 +83,22 @@ A Snowflake App Runtime (SAR) Next.js app with:
 ### Why Snowflake Wins — Three Structural Layers
 
 1. **Base semantic view** (zero tuning) — column descriptions, relationships, and sample values prevent ~15 questions' worth of errors out of the box.
-2. **Iterative feedback loop** — `sql_generation` rules and verified queries let you teach the agent domain expertise. Each fix is permanent and compounds across similar questions. Databricks has no equivalent.
+2. **Iterative feedback loop** — `sql_generation` rules and verified queries let you teach the agent domain expertise. Each fix is permanent and compounds across similar questions.
 3. **Cortex Search + orchestration** — 3 dedicated search services with typed, filterable attributes, plus explicit multi-tool routing for hybrid questions.
+
+### Fair Comparison: Equivalent Metadata on Both Platforms
+
+To ensure a fair benchmark, Databricks Genie was configured with equivalent metadata matching Snowflake's semantic view:
+
+| Snowflake | Databricks Equivalent | Setup File |
+|---|---|---|
+| Column descriptions + sample values | Unity Catalog column comments | `dbx_03_column_comments.sql` |
+| `sql_generation` rules | Genie Space instructions | `dbx_04_genie_instructions.md` |
+| Verified queries (VQRs) | Genie Space sample queries | `dbx_05_sample_queries.md` |
+| Relationships (foreign keys) | UC informational FK constraints | `dbx_03_column_comments.sql` |
+| Agent instructions | Supervisor agent instructions | `dbx_02_agent_setup.md` |
+
+Both platforms have the same column descriptions, the same data trap rules, the same sample SQL patterns, and the same join path guidance. The remaining performance gap reflects structural platform differences, not a metadata advantage.
 
 ## Sample Benchmark: Clinical Trials (Pharma)
 
@@ -107,6 +137,9 @@ pharma/
 |   |-- sf_02_create_agent.sql         # Cortex Search services + Agent
 |   |-- dbx_01_load_data.ipynb         # Databricks data loading notebook
 |   |-- dbx_02_agent_setup.md          # Genie + Knowledge Assistant + Supervisor
+|   |-- dbx_03_column_comments.sql     # Unity Catalog column comments + PK/FK constraints
+|   |-- dbx_04_genie_instructions.md   # Genie Space instructions (equivalent to sql_generation rules)
+|   |-- dbx_05_sample_queries.md       # Genie Space sample queries (equivalent to VQRs)
 |
 |-- questions/
 |   |-- benchmark_questions.md         # 30 hybrid questions with expected answers
@@ -117,6 +150,7 @@ pharma/
 |   |-- lib/                           # Snowflake connection, constants
 |
 |-- BENCHMARK_ANALYSIS.md             # Full analysis with patterns and findings
+|-- Benchmark_Evaluator.pdf           # Exported evaluator report
 ```
 
 ## Setup
@@ -131,7 +165,10 @@ pharma/
 ### Databricks
 
 1. Load data using `setup/dbx_01_load_data.ipynb`
-2. Follow `setup/dbx_02_agent_setup.md` for Genie + Knowledge Assistant + Supervisor
+2. Run `setup/dbx_03_column_comments.sql` to add column comments and PK/FK constraints
+3. Follow `setup/dbx_02_agent_setup.md` for Genie + Knowledge Assistant + Supervisor
+4. Paste contents of `setup/dbx_04_genie_instructions.md` into Genie Space → Instructions
+5. Add queries from `setup/dbx_05_sample_queries.md` into Genie Space → Sample Queries
 
 ### Evaluator App
 

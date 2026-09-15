@@ -12,7 +12,6 @@ export async function GET(request: NextRequest) {
     if (runId) {
       sql = `SELECT r.result_id, r.question_id, r.platform,
                     r.score_accuracy, r.score_groundedness, r.score_relevance,
-                    r.score_usefulness, r.score_correctness, r.score_consequences,
                     r.score_total, r.scoring_rationale, r.scored_at, r.run_id,
                     e.tier, e.traps, e.question_text
              FROM ${DB_SCHEMA}.TBL_BENCHMARK_RESULTS r
@@ -27,7 +26,6 @@ export async function GET(request: NextRequest) {
              )
              SELECT r.result_id, r.question_id, r.platform,
                     r.score_accuracy, r.score_groundedness, r.score_relevance,
-                    r.score_usefulness, r.score_correctness, r.score_consequences,
                     r.score_total, r.scoring_rationale, r.scored_at, r.run_id,
                     e.tier, e.traps, e.question_text
              FROM latest r

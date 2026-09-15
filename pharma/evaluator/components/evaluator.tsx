@@ -23,21 +23,14 @@ interface Scores {
   accuracy: number
   groundedness: number
   relevance: number
-  usefulness: number
-  correctness: number
-  decision_consequences: number
   total: number
   rationale: string
-  consequences_detail?: string
 }
 
 const DIMENSIONS = [
   { key: "accuracy", label: "Accuracy" },
   { key: "groundedness", label: "Groundedness" },
   { key: "relevance", label: "Relevance" },
-  { key: "usefulness", label: "Usefulness" },
-  { key: "correctness", label: "Correctness" },
-  { key: "decision_consequences", label: "Consequences" },
 ] as const
 
 function scoreColor(score: number): string {
@@ -68,7 +61,7 @@ function scorePill(score: number | undefined, size: "sm" | "md" = "sm") {
 
 function totalPill(score: number | undefined, platform: "sf" | "dbx") {
   if (score === undefined) return <span className="text-muted-foreground">-</span>
-  const avg = score / 6
+  const avg = score / 3
   let bg = "bg-red-50 border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-800 dark:text-red-300"
   if (avg >= 4) bg = "bg-green-50 border-green-200 text-green-700 dark:bg-green-950/40 dark:border-green-800 dark:text-green-300"
   else if (avg >= 3) bg = "bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-950/40 dark:border-yellow-800 dark:text-yellow-300"
@@ -339,9 +332,6 @@ export default function Evaluator() {
     SCORE_ACCURACY: number
     SCORE_GROUNDEDNESS: number
     SCORE_RELEVANCE: number
-    SCORE_USEFULNESS: number
-    SCORE_CORRECTNESS: number
-    SCORE_CONSEQUENCES: number
     SCORING_RATIONALE: string
     SCORED_AT: string
     RUN_ID: string
@@ -695,15 +685,15 @@ export default function Evaluator() {
                     <td className="py-4 pr-6 text-lg">TOTAL</td>
                     <td className="text-center py-4 px-6">
                       {snowflakeScores ? (
-                        <span className={`text-3xl font-black ${scoreBg(snowflakeScores.total / 6)} px-3 py-1.5 rounded-lg`}>
-                          {snowflakeScores.total}/30
+                        <span className={`text-3xl font-black ${scoreBg(snowflakeScores.total / 3)} px-3 py-1.5 rounded-lg`}>
+                          {snowflakeScores.total}/15
                         </span>
                       ) : "-"}
                     </td>
                     <td className="text-center py-4 px-6">
                       {databricksScores ? (
-                        <span className={`text-3xl font-black ${scoreBg(databricksScores.total / 6)} px-3 py-1.5 rounded-lg`}>
-                          {databricksScores.total}/30
+                        <span className={`text-3xl font-black ${scoreBg(databricksScores.total / 3)} px-3 py-1.5 rounded-lg`}>
+                          {databricksScores.total}/15
                         </span>
                       ) : "-"}
                     </td>
@@ -727,12 +717,6 @@ export default function Evaluator() {
                     <p className="font-bold text-lg mb-3">Snowflake Rationale:</p>
                     <p className="text-base leading-relaxed">{snowflakeScores.rationale}</p>
                   </div>
-                  {snowflakeScores.consequences_detail && (
-                    <div className="bg-blue-100 dark:bg-blue-900/40 p-5 rounded border-l-4 border-blue-500">
-                      <p className="font-bold text-lg mb-3">Snowflake — Decision Consequences:</p>
-                      <p className="text-base leading-relaxed">{snowflakeScores.consequences_detail}</p>
-                    </div>
-                  )}
                 </div>
               )}
               {databricksScores?.rationale && (
@@ -741,12 +725,6 @@ export default function Evaluator() {
                     <p className="font-bold text-lg mb-3">Databricks Rationale:</p>
                     <p className="text-base leading-relaxed">{databricksScores.rationale}</p>
                   </div>
-                  {databricksScores.consequences_detail && (
-                    <div className="bg-orange-100 dark:bg-orange-900/40 p-5 rounded border-l-4 border-orange-500">
-                      <p className="font-bold text-lg mb-3">Databricks — Decision Consequences:</p>
-                      <p className="text-base leading-relaxed">{databricksScores.consequences_detail}</p>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -824,14 +802,11 @@ export default function Evaluator() {
                         <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10 bg-muted/20" colSpan={2}>Acc</th>
                         <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10" colSpan={2}>Gnd</th>
                         <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10 bg-muted/20" colSpan={2}>Rel</th>
-                        <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10" colSpan={2}>Use</th>
-                        <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10 bg-muted/20" colSpan={2}>Cor</th>
-                        <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10" colSpan={2}>Con</th>
                         <th className="py-2 px-2 text-center text-lg font-bold text-muted-foreground border-l border-foreground/10" rowSpan={2}>&Delta;</th>
                         <th className="py-2 px-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider" rowSpan={2}>W</th>
                       </tr>
                       <tr className="border-b border-foreground/10 bg-background">
-                        {[false, true, false, true, false, true, false].map((alt, i) => (
+                        {[false, true, false, true].map((alt, i) => (
                           <React.Fragment key={i}>
                             <th className={`py-1.5 px-1 text-center border-l border-foreground/10 ${alt ? "bg-muted/20" : ""}`} title="Snowflake">
                               <img src="/snowflake-logo.svg" alt="SF" width="20" height="20" className="inline-block" />
@@ -855,9 +830,6 @@ export default function Evaluator() {
                           { sfVal: sf?.SCORE_ACCURACY, dbxVal: dbx?.SCORE_ACCURACY, alt: true },
                           { sfVal: sf?.SCORE_GROUNDEDNESS, dbxVal: dbx?.SCORE_GROUNDEDNESS, alt: false },
                           { sfVal: sf?.SCORE_RELEVANCE, dbxVal: dbx?.SCORE_RELEVANCE, alt: true },
-                          { sfVal: sf?.SCORE_USEFULNESS, dbxVal: dbx?.SCORE_USEFULNESS, alt: false },
-                          { sfVal: sf?.SCORE_CORRECTNESS, dbxVal: dbx?.SCORE_CORRECTNESS, alt: true },
-                          { sfVal: sf?.SCORE_CONSEQUENCES, dbxVal: dbx?.SCORE_CONSEQUENCES, alt: false },
                         ]
                         return (
                           <tr

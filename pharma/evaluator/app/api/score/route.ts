@@ -4,34 +4,26 @@ import { DB_SCHEMA, SCORING_MODEL } from "@/lib/constants"
 
 export const dynamic = "force-dynamic"
 
-const SCORING_PROMPT = `You are a benchmark scoring judge for a clinical trial AI agent.
+const SCORING_PROMPT = `You are a benchmark judge scoring a clinical trial AI agent's answer.
+Score on 3 dimensions (1-5 each). Be lenient on formatting and presentation — focus on substance.
 
-Score the agent's output on 6 dimensions (1-5 each):
-1. ACCURACY: Are the numbers and facts correct?
-2. GROUNDEDNESS: Is the answer grounded in the actual data/documents, not hallucinated?
-3. RELEVANCE: Does the answer address the question asked?
-4. USEFULNESS: Is the answer actionable and well-formatted?
-5. CORRECTNESS: Is the SQL/search methodology correct? Did it avoid data traps?
-6. DECISION_CONSEQUENCES: If a decision-maker acted on this answer, would the outcome be correct?
+1. ACCURACY — Are the numbers right? (5 = all match, 1 = fabricated)
+2. GROUNDEDNESS — Is it grounded in data? (5 = fully grounded, 1 = hallucinated)
+3. RELEVANCE — Does it answer what was asked? (5 = fully addressed, 1 = off-topic)
 
-CRITICAL TRAP RULES:
-- seriousness='SERIOUS' is CORRECT for serious AEs. severity='SEVERE' is WRONG (different concept).
-- Enrollment rate must be DERIVED (no column exists). Screen failures must be in denominator.
-- Visit on-time must use visit_window_days per visit, not a fixed window.
-- AE grain: count events vs count patients — agent must clarify which.
-- For document questions: answer must be grounded in corpus, not generic knowledge.
-- EVERY question is hybrid: the agent must use BOTH structured data AND document search.
 
-Return ONLY valid JSON (no markdown, no explanation):
+RULES:
+- Compare agent output against the expected answer and key numbers. Numbers within 5% are fine.
+- Do NOT penalize for caveats, disclaimers, presentation style, table vs prose, or rounding differences.
+- DO penalize for wrong numbers, hallucinated claims, and missed question parts.
+- For document/literature questions: answer must come from corpus search, not generic knowledge.
+
+Return ONLY valid JSON:
 {
   "accuracy": <1-5>,
   "groundedness": <1-5>,
   "relevance": <1-5>,
-  "usefulness": <1-5>,
-  "correctness": <1-5>,
-  "decision_consequences": <1-5>,
-  "rationale": "<2-3 sentences explaining the scores>",
-  "consequences_detail": "<Detailed explanation: What would happen if a VP/board member acted on this answer? What decisions would go wrong? What patient safety, financial, or regulatory risks arise from any errors in this output? Be specific about the real-world impact.>"
+  "rationale": "<2-3 sentences explaining scores, referencing specific numbers that matched or didn't>"
 }`
 
 
@@ -72,8 +64,6 @@ EXPECTED ANSWER: ${expectedAnswer}
 
 KEY NUMBERS THAT MUST APPEAR: ${keyNumbers}
 
-DATA TRAPS TO CHECK: ${traps || "None"}
-
 AGENT OUTPUT TO SCORE:
 ${combinedOutput}
 
@@ -95,8 +85,7 @@ Score this output now. Return only the JSON object.`
     }
 
     const total = (scores.accuracy || 0) + (scores.groundedness || 0) +
-      (scores.relevance || 0) + (scores.usefulness || 0) +
-      (scores.correctness || 0) + (scores.decision_consequences || 0)
+      (scores.relevance || 0)
 
     const resultId = crypto.randomUUID()
     const outputForStorage = agentOutput
@@ -109,13 +98,12 @@ Score this output now. Return only the JSON object.`
        score_accuracy, score_groundedness, score_relevance,
        score_usefulness, score_correctness, score_consequences,
        score_total, scoring_rationale, run_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?)`
 
     await querySnowflakeLongRunning(insertSql, {
       binds: [
         resultId, questionId, platform || "UNKNOWN", outputForStorage,
         scores.accuracy, scores.groundedness, scores.relevance,
-        scores.usefulness, scores.correctness, scores.decision_consequences,
         total, scores.rationale || "", runId || null,
       ],
     })

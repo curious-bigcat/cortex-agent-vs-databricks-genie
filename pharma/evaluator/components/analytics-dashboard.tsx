@@ -9,9 +9,6 @@ interface ResultRow {
   SCORE_ACCURACY: number
   SCORE_GROUNDEDNESS: number
   SCORE_RELEVANCE: number
-  SCORE_USEFULNESS: number
-  SCORE_CORRECTNESS: number
-  SCORE_CONSEQUENCES: number
   SCORING_RATIONALE: string
   SCORED_AT: string
   RUN_ID: string
@@ -19,8 +16,8 @@ interface ResultRow {
   QUESTION_TEXT: string
 }
 
-const DIMS = ["ACCURACY", "GROUNDEDNESS", "RELEVANCE", "USEFULNESS", "CORRECTNESS", "CONSEQUENCES"] as const
-const DIM_FULL = ["Accuracy", "Groundedness", "Relevance", "Usefulness", "Correctness", "Consequences"]
+const DIMS = ["ACCURACY", "GROUNDEDNESS", "RELEVANCE"] as const
+const DIM_FULL = ["Accuracy", "Groundedness", "Relevance"]
 
 function VegaChart({ spec, className }: { spec: object; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -212,10 +209,23 @@ export default function AnalyticsDashboard() {
               </ul>
             </div>
             <div className="bg-muted/30 rounded-md p-2.5">
+              <div className="font-bold text-foreground/80 mb-1">Exploit Pattern Map</div>
+              <div className="space-y-1 text-foreground/70 text-[10px]">
+                <div><span className="font-semibold">3 Search Services vs 1:</span> All Q01-Q30 (every question is hybrid)</div>
+                <div><span className="font-semibold">Deep joins (4-5 hops):</span> Q01, Q05, Q07, Q08, Q14, Q15, Q18, Q20, Q21, Q23, Q25, Q28, Q30</div>
+                <div><span className="font-semibold">Multi-step CTEs:</span> Q05, Q06, Q10-Q25, Q28, Q29</div>
+                <div><span className="font-semibold">Column traps:</span> Q01, Q02, Q05-Q07, Q11, Q13, Q15, Q21, Q25, Q27, Q28</div>
+                <div><span className="font-semibold">Cross-tool synthesis:</span> All Q01-Q30 (SQL result handed to search)</div>
+                <div><span className="font-semibold">Negation patterns:</span> Q02, Q09, Q12, Q14, Q19, Q22, Q26, Q28</div>
+                <div><span className="font-semibold">Temporal:</span> Q03, Q11, Q13, Q17, Q24, Q27</div>
+                <div><span className="font-semibold">Composite metrics:</span> Q15, Q21, Q25, Q28, Q30</div>
+              </div>
+            </div>
+            <div className="bg-muted/30 rounded-md p-2.5">
               <div className="font-bold text-foreground/80 mb-1">Key Patterns</div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-foreground/70">
-                <div>Perfect scores (30/30):</div><div className="font-semibold">{qids.filter(q => sfMap[q]?.SCORE_TOTAL === 30).length} SF / {qids.filter(q => dbxMap[q]?.SCORE_TOTAL === 30).length} DBX</div>
-                <div>Critical fails (&lt;15):</div><div className="font-semibold">{qids.filter(q => sfMap[q] && sfMap[q].SCORE_TOTAL < 15).length} SF / {qids.filter(q => dbxMap[q] && dbxMap[q].SCORE_TOTAL < 15).length} DBX</div>
+                <div>Perfect scores (15/15):</div><div className="font-semibold">{qids.filter(q => sfMap[q]?.SCORE_TOTAL === 15).length} SF / {qids.filter(q => dbxMap[q]?.SCORE_TOTAL === 15).length} DBX</div>
+                <div>Critical fails (&lt;8):</div><div className="font-semibold">{qids.filter(q => sfMap[q] && sfMap[q].SCORE_TOTAL < 8).length} SF / {qids.filter(q => dbxMap[q] && dbxMap[q].SCORE_TOTAL < 8).length} DBX</div>
                 <div>Biggest SF win:</div><div className="font-semibold text-blue-600">+{Math.max(...gaps.map(g => g.delta))} pts ({gaps.find(g => g.delta === Math.max(...gaps.map(g2 => g2.delta)))?.q})</div>
                 <div>Biggest DBX win:</div><div className="font-semibold text-orange-600">{Math.min(...gaps.map(g => g.delta))} pts ({gaps.find(g => g.delta === Math.min(...gaps.map(g2 => g2.delta)))?.q})</div>
               </div>
@@ -278,7 +288,7 @@ export default function AnalyticsDashboard() {
                 <div>
                   <div className="flex items-center gap-1 mb-1">
                     <img src="/databricks-logo.svg" alt="" width="14" height="14" />
-                    <span className="text-[11px] font-bold text-orange-600">Databricks Genie ({d.SCORE_TOTAL}/30) — Where it fell short</span>
+                    <span className="text-[11px] font-bold text-orange-600">Databricks Genie ({d.SCORE_TOTAL}/15) — Where it fell short</span>
                   </div>
                   <div className="text-[11px] leading-relaxed bg-orange-50 dark:bg-orange-950/20 p-2 rounded text-foreground/80">{d.SCORING_RATIONALE}</div>
                 </div>
