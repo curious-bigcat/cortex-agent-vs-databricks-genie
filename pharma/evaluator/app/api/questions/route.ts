@@ -8,7 +8,8 @@ export async function GET() {
   try {
     const rows = await querySnowflake(
       `SELECT question_id, tier, traps, question_text, expected_answer, key_numbers,
-              scoring_5, scoring_3, scoring_1
+              scoring_5, scoring_3, scoring_1, complexity_type, dbx_failure_pattern,
+              sf_tool_calls, sf_failures, dbx_tool_calls, dbx_failures
        FROM ${DB_SCHEMA}.TBL_EXPECTED_ANSWERS
        ORDER BY question_id`
     )

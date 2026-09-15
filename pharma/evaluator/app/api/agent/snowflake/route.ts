@@ -224,6 +224,10 @@ async function processStream(requestId: string, url: string, token: string, ques
           }
           case "response": {
             const finalParsed = parseCortexResponse(data)
+            // Capture usage from the final response event
+            if (data.usage) {
+              finalParsed.tokens = data.usage.total_tokens || data.usage.completion_tokens
+            }
             completeStream(requestId, finalParsed)
             return
           }

@@ -36,6 +36,11 @@ export function completeStream(id: string, finalResponse?: AgentResponse) {
   const entry = streams.get(id)
   if (entry) {
     if (finalResponse) entry.response = finalResponse
+    // Count tool calls and failures from content
+    const toolSteps = entry.response.content.filter(c => c.type === "tool_step")
+    entry.response.toolCalls = toolSteps.length
+    entry.response.failures = toolSteps.filter(c => c.type === "tool_step" && c.status === "error").length
+    entry.response.tokens = Math.round((entry.response.plainText?.length || 0) / 4)
     entry.done = true
   }
 }

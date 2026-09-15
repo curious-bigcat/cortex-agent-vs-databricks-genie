@@ -14,6 +14,7 @@ interface ResultRow {
   RUN_ID: string
   TIER: number
   QUESTION_TEXT: string
+  DBX_FAILURE_PATTERN?: string | null
 }
 
 const DIMS = ["ACCURACY", "GROUNDEDNESS", "RELEVANCE"] as const
@@ -291,6 +292,12 @@ export default function AnalyticsDashboard() {
                     <span className="text-[11px] font-bold text-orange-600">Databricks Genie ({d.SCORE_TOTAL}/15) — Where it fell short</span>
                   </div>
                   <div className="text-[11px] leading-relaxed bg-orange-50 dark:bg-orange-950/20 p-2 rounded text-foreground/80">{d.SCORING_RATIONALE}</div>
+                  {d.DBX_FAILURE_PATTERN && (
+                    <div className="text-[11px] leading-relaxed bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 p-2 rounded mt-1.5">
+                      <span className="font-bold text-red-700 dark:text-red-400">Failure Pattern: </span>
+                      <span className="text-red-800 dark:text-red-300">{d.DBX_FAILURE_PATTERN}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )

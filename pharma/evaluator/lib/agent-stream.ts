@@ -102,5 +102,12 @@ export function parseCortexResponse(data: any): AgentResponse {
     }
   }
 
-  return { content, plainText: textParts.join("\n\n"), fullTextForScoring: scoringParts.join("\n\n") }
+  const toolCalls = content.filter(c => c.type === "tool_step").length
+  const failures = content.filter(c => c.type === "tool_step" && c.status === "error").length
+
+  // Extract token usage from API response if available
+  const usage = data?.usage || data?.model_usage
+  const tokens = usage?.total_tokens || usage?.completion_tokens || undefined
+
+  return { content, plainText: textParts.join("\n\n"), fullTextForScoring: scoringParts.join("\n\n"), toolCalls, failures, tokens }
 }

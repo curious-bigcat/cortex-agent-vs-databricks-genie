@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
       sql = `SELECT r.result_id, r.question_id, r.platform,
                     r.score_accuracy, r.score_groundedness, r.score_relevance,
                     r.score_total, r.scoring_rationale, r.scored_at, r.run_id,
+                    r.dbx_failure_pattern,
                     e.tier, e.traps, e.question_text
              FROM ${DB_SCHEMA}.TBL_BENCHMARK_RESULTS r
              JOIN ${DB_SCHEMA}.TBL_EXPECTED_ANSWERS e ON r.question_id = e.question_id
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
              SELECT r.result_id, r.question_id, r.platform,
                     r.score_accuracy, r.score_groundedness, r.score_relevance,
                     r.score_total, r.scoring_rationale, r.scored_at, r.run_id,
+                    r.dbx_failure_pattern,
                     e.tier, e.traps, e.question_text
              FROM latest r
              JOIN ${DB_SCHEMA}.TBL_EXPECTED_ANSWERS e ON r.question_id = e.question_id

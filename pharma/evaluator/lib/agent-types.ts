@@ -47,4 +47,7 @@ export interface AgentResponse {
   plainText: string
   fullTextForScoring: string
   error?: string
+  toolCalls?: number
+  failures?: number
+  tokens?: number
 }

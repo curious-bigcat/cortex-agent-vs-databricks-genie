@@ -17,6 +17,12 @@ interface Question {
   SCORING_5: string
   SCORING_3: string
   SCORING_1: string
+  COMPLEXITY_TYPE: string | null
+  DBX_FAILURE_PATTERN: string | null
+  SF_TOOL_CALLS: number | null
+  SF_FAILURES: number | null
+  DBX_TOOL_CALLS: number | null
+  DBX_FAILURES: number | null
 }
 
 interface Scores {
@@ -25,6 +31,7 @@ interface Scores {
   relevance: number
   total: number
   rationale: string
+  failure_pattern?: string | null
 }
 
 const DIMENSIONS = [
@@ -75,13 +82,6 @@ function deltaBadge(delta: number | null) {
     ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
     : "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300"
   return <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-bold ${cls}`}>{delta > 0 ? `+${delta}` : delta}</span>
-}
-
-function winnerBadge(winner: string) {
-  if (winner === "SF") return <span className="inline-block rounded-md bg-blue-600 text-white px-2 py-0.5 text-xs font-bold">SF</span>
-  if (winner === "DBX") return <span className="inline-block rounded-md bg-orange-500 text-white px-2 py-0.5 text-xs font-bold">DBX</span>
-  if (winner === "TIE") return <span className="inline-block rounded-md border border-muted-foreground/30 text-muted-foreground px-2 py-0.5 text-xs font-semibold">TIE</span>
-  return null
 }
 
 function tierBadge(tier: number) {
@@ -337,6 +337,7 @@ export default function Evaluator() {
     RUN_ID: string
     TIER: number
     QUESTION_TEXT: string
+    DBX_FAILURE_PATTERN?: string | null
   }
   const [results, setResults] = useState<ResultRow[]>([])
   const [showResults, setShowResults] = useState(true)
@@ -570,6 +571,50 @@ export default function Evaluator() {
                 </pre>
                 <p className="mt-2"><strong>Key numbers:</strong> {selected.KEY_NUMBERS}</p>
               </details>
+              {selected.COMPLEXITY_TYPE && (
+                <div className="text-sm bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 p-3 rounded-lg">
+                  <span className="font-semibold text-purple-700 dark:text-purple-400">Complexity: </span>
+                  <span className="text-purple-800 dark:text-purple-300">{selected.COMPLEXITY_TYPE}</span>
+                </div>
+              )}
+              {selected.DBX_FAILURE_PATTERN && (
+                <div className="text-sm bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-3 rounded-lg">
+                  <span className="font-semibold text-red-700 dark:text-red-400">DBX Failure Pattern: </span>
+                  <span className="text-red-800 dark:text-red-300">{selected.DBX_FAILURE_PATTERN}</span>
+                </div>
+              )}
+              {/* Previous Run Analysis */}
+              {(() => {
+                const sfPrev = results.find(r => r.QUESTION_ID === selected.QUESTION_ID && r.PLATFORM === "SNOWFLAKE")
+                const dbxPrev = results.find(r => r.QUESTION_ID === selected.QUESTION_ID && r.PLATFORM === "DATABRICKS")
+                if (!sfPrev && !dbxPrev) return null
+                return (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-sm">
+                    {sfPrev && (
+                      <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-3 rounded-lg">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-blue-700 dark:text-blue-400">Snowflake — Previous Run ({sfPrev.SCORE_TOTAL}/15)</span>
+                        </div>
+                        <p className="text-xs leading-relaxed text-foreground/80">{sfPrev.SCORING_RATIONALE}</p>
+                      </div>
+                    )}
+                    {dbxPrev && (
+                      <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 p-3 rounded-lg space-y-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-semibold text-orange-700 dark:text-orange-400">Databricks — Previous Run ({dbxPrev.SCORE_TOTAL}/15)</span>
+                        </div>
+                        <p className="text-xs leading-relaxed text-foreground/80">{dbxPrev.SCORING_RATIONALE}</p>
+                        {dbxPrev.DBX_FAILURE_PATTERN && (
+                          <div className="text-xs bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-2 rounded">
+                            <span className="font-semibold text-red-700 dark:text-red-400">Failure: </span>
+                            <span className="text-red-800 dark:text-red-300">{dbxPrev.DBX_FAILURE_PATTERN}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           )}
         </CardContent>
@@ -717,6 +762,12 @@ export default function Evaluator() {
                     <p className="font-bold text-lg mb-3">Snowflake Rationale:</p>
                     <p className="text-base leading-relaxed">{snowflakeScores.rationale}</p>
                   </div>
+                  {snowflakeScores.failure_pattern && (
+                    <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-5 rounded">
+                      <p className="font-bold text-lg mb-3 text-red-700 dark:text-red-400">SF Failure Pattern:</p>
+                      <p className="text-base leading-relaxed text-red-800 dark:text-red-300">{snowflakeScores.failure_pattern}</p>
+                    </div>
+                  )}
                 </div>
               )}
               {databricksScores?.rationale && (
@@ -725,6 +776,12 @@ export default function Evaluator() {
                     <p className="font-bold text-lg mb-3">Databricks Rationale:</p>
                     <p className="text-base leading-relaxed">{databricksScores.rationale}</p>
                   </div>
+                  {databricksScores.failure_pattern && (
+                    <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-5 rounded">
+                      <p className="font-bold text-lg mb-3 text-red-700 dark:text-red-400">DBX Failure Pattern:</p>
+                      <p className="text-base leading-relaxed text-red-800 dark:text-red-300">{databricksScores.failure_pattern}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -756,37 +813,21 @@ export default function Evaluator() {
                   const dbxResults = results.filter(r => r.PLATFORM === "DATABRICKS")
                   const sfAvg = sfResults.length ? (sfResults.reduce((s, r) => s + r.SCORE_TOTAL, 0) / sfResults.length).toFixed(1) : "-"
                   const dbxAvg = dbxResults.length ? (dbxResults.reduce((s, r) => s + r.SCORE_TOTAL, 0) / dbxResults.length).toFixed(1) : "-"
-                  const sfWins = sfResults.filter((r) => {
-                    const dbx = dbxResults.find(d => d.QUESTION_ID === r.QUESTION_ID)
-                    return dbx && r.SCORE_TOTAL > dbx.SCORE_TOTAL
-                  }).length
-                  const dbxWins = dbxResults.filter((r) => {
-                    const sf = sfResults.find(s => s.QUESTION_ID === r.QUESTION_ID)
-                    return sf && r.SCORE_TOTAL > sf.SCORE_TOTAL
-                  }).length
-                  const ties = sfResults.filter((r) => {
-                    const dbx = dbxResults.find(d => d.QUESTION_ID === r.QUESTION_ID)
-                    return dbx && r.SCORE_TOTAL === dbx.SCORE_TOTAL
-                  }).length
+                  const sfTotal = sfResults.reduce((s, r) => s + r.SCORE_TOTAL, 0)
+                  const dbxTotal = dbxResults.reduce((s, r) => s + r.SCORE_TOTAL, 0)
                   return (
                     <div className="grid grid-cols-3 gap-6 mb-8">
                       <div className="bg-blue-50 dark:bg-blue-950/30 p-5 rounded-xl border border-blue-200 dark:border-blue-800 text-center">
                         <div className="text-4xl font-black text-blue-600">{sfAvg}</div>
-                        <div className="text-sm font-semibold text-blue-600/70 mt-1">Snowflake Avg</div>
+                        <div className="text-sm font-semibold text-blue-600/70 mt-1">Snowflake Avg ({sfTotal}/{sfResults.length * 15})</div>
                       </div>
                       <div className="bg-orange-50 dark:bg-orange-950/30 p-5 rounded-xl border border-orange-200 dark:border-orange-800 text-center">
                         <div className="text-4xl font-black text-orange-600">{dbxAvg}</div>
-                        <div className="text-sm font-semibold text-orange-600/70 mt-1">Databricks Avg</div>
+                        <div className="text-sm font-semibold text-orange-600/70 mt-1">Databricks Avg ({dbxTotal}/{dbxResults.length * 15})</div>
                       </div>
                       <div className="bg-muted/50 p-5 rounded-xl border text-center">
-                        <div className="text-4xl font-black">
-                          <span className="text-blue-600">{sfWins}</span>
-                          <span className="text-muted-foreground mx-1">-</span>
-                          <span className="text-orange-600">{dbxWins}</span>
-                          <span className="text-muted-foreground mx-1">-</span>
-                          <span className="text-muted-foreground">{ties}</span>
-                        </div>
-                        <div className="text-sm font-semibold text-muted-foreground mt-1">SF Wins - DBX Wins - Ties</div>
+                        <div className="text-4xl font-black text-green-600">+{sfTotal - dbxTotal}</div>
+                        <div className="text-sm font-semibold text-muted-foreground mt-1">SF Point Lead</div>
                       </div>
                     </div>
                   )
@@ -803,7 +844,6 @@ export default function Evaluator() {
                         <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10" colSpan={2}>Gnd</th>
                         <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10 bg-muted/20" colSpan={2}>Rel</th>
                         <th className="py-2 px-2 text-center text-lg font-bold text-muted-foreground border-l border-foreground/10" rowSpan={2}>&Delta;</th>
-                        <th className="py-2 px-2 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider" rowSpan={2}>W</th>
                       </tr>
                       <tr className="border-b border-foreground/10 bg-background">
                         {[false, true, false, true].map((alt, i) => (
@@ -823,7 +863,6 @@ export default function Evaluator() {
                         const sf = results.find(r => r.QUESTION_ID === q.QUESTION_ID && r.PLATFORM === "SNOWFLAKE")
                         const dbx = results.find(r => r.QUESTION_ID === q.QUESTION_ID && r.PLATFORM === "DATABRICKS")
                         const delta = sf && dbx ? sf.SCORE_TOTAL - dbx.SCORE_TOTAL : null
-                        const winner = delta === null ? "" : delta > 0 ? "SF" : delta < 0 ? "DBX" : "TIE"
                         const prevTier = qIdx > 0 ? questions[qIdx - 1].TIER : q.TIER
                         const tierBreak = q.TIER !== prevTier
                         const dimPairs: { sfVal: number | undefined; dbxVal: number | undefined; alt: boolean }[] = [
@@ -857,9 +896,6 @@ export default function Evaluator() {
                             ))}
                             <td className="py-2 px-2 text-center border-l border-foreground/10">
                               {deltaBadge(delta)}
-                            </td>
-                            <td className="py-2 px-2 text-center">
-                              {winnerBadge(winner)}
                             </td>
                           </tr>
                         )
