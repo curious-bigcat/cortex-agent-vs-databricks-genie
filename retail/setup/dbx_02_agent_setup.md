@@ -4,6 +4,9 @@
 - All 12 CSV files uploaded to `/Volumes/<YOUR_CATALOG>/retailiq/retailiq/csv_files/`
 - All .txt document directories uploaded to `/Volumes/<YOUR_CATALOG>/retailiq/retailiq/doc_files/`
 - Tables loaded via `dbx_01_load_data` notebook
+- **Table & column comments**: Already applied via Genie auto-generation
+
+---
 
 ## Step 1: Create Genie Space
 
@@ -14,49 +17,502 @@
 5. Add all 13 tables (12 structured + doc_document)
 
 ### General Instructions
+
+Paste the following into the Genie Space's General Instructions:
+
 ```
 You are RetailIQ, an analytics agent for a multi-country Asia-Pacific retail operation
 spanning Japan (JP), South Korea (KR), India (IN), Australia (AU), and Singapore (SG).
 
+TABLE RELATIONSHIPS (join paths):
+- dim_employee.store_id → dim_store.store_id
+- fact_inventory.product_id → dim_product.product_id
+- fact_inventory.store_id → dim_store.store_id
+- fact_loyalty_txn.customer_id → fact_customer.customer_id
+- fact_loyalty_txn.order_id → fact_order.order_id
+- fact_order.store_id → dim_store.store_id
+- fact_order.customer_id → fact_customer.customer_id
+- fact_order_line.product_id → dim_product.product_id
+- fact_order_line.order_id → fact_order.order_id
+- fact_promotion.product_id → dim_product.product_id
+- fact_promotion.store_id → dim_store.store_id
+- fact_return.line_id → fact_order_line.line_id
+- fact_review.product_id → dim_product.product_id
+- fact_review.customer_id → fact_customer.customer_id
+- dim_product.supplier_id → dim_supplier.supplier_id
+
 DATA RULES:
-1. When calculating revenue or sales metrics, always filter fact_order.order_status = 'COMPLETED'.
-   Never include CANCELLED, PENDING, or REFUNDED orders.
-2. Loyalty members are customers with fact_customer.signup_dt IS NOT NULL.
+1. Revenue: Always filter fact_order.order_status = 'COMPLETED'. Never include CANCELLED,
+   PENDING, or REFUNDED orders in revenue calculations.
+2. Line-level revenue: Use SUM(fact_order_line.line_total) for accurate revenue.
+   fact_order.total_amount is an order-level header amount — different from line totals.
+3. Loyalty members: Customers with fact_customer.signup_dt IS NOT NULL.
    Per-member metrics use members as denominator, not all customers.
-3. For COGS, use dim_product.cost_price × quantity. For inventory, use fact_inventory.cost_value.
-4. Return rate = count of returns / count of order lines.
-   Join: fact_return.line_id → fact_order_line.line_id → dim_product.product_id.
-5. Supplier return analysis: fact_return → fact_order_line → dim_product → dim_supplier.
-6. Avoid cartesian products: pre-aggregate each metric by dimension key before joining.
-7. Valid loyalty tiers: BRONZE, SILVER, GOLD, PLATINUM. Tier='NONE' means non-member.
-8. Dormant member = signup_dt IS NOT NULL, never had REDEEM in fact_loyalty_txn AND never
+   MEMBER_COUNT = COUNT(DISTINCT CASE WHEN signup_dt IS NOT NULL THEN customer_id END).
+4. COGS: Use dim_product.cost_price × quantity. For inventory cost, use fact_inventory.cost_value.
+5. Return rate: COUNT(returns) / COUNT(order_lines).
+   Join path: fact_return.line_id → fact_order_line.line_id → dim_product.product_id.
+6. Supplier analysis: fact_return → fact_order_line → dim_product → dim_supplier.
+7. Avoid cartesian products: Pre-aggregate each metric by dimension key before joining
+   multiple fact tables.
+8. Valid loyalty tiers: BRONZE, SILVER, GOLD, PLATINUM. Tier='NONE' means non-member.
+9. Dormant member: signup_dt IS NOT NULL, never had REDEEM in fact_loyalty_txn AND never
    written a review in fact_review.
-9. Store profitability = Revenue (completed line_total) - COGS (qty × cost_price) - Refunds.
-10. For document/benchmark questions, search the doc_document table using SQL LIKE or CONTAINS.
+10. Store profitability: Revenue (completed SUM(line_total)) - COGS (qty × cost_price) - Refunds.
+11. Completed order metrics: Use CASE WHEN order_status = 'COMPLETED' THEN 1 ELSE 0 END
+    for counting completed orders; similar for CANCELLED, PENDING.
+12. For document/benchmark questions, search the doc_document table using SQL LIKE or CONTAINS.
+
+STRUCTURAL DATA GAPS (real — do NOT hallucinate values for these):
+- Food & Beverage products have ZERO reviews in fact_review — report this as a gap.
+- Singapore (SG) has ZERO inventory records in fact_inventory — report this as a gap.
+- Singapore (SG) and India (IN) have ZERO BONUS loyalty transactions — report this as a gap.
+- India (IN) and South Korea (KR) have ZERO BOGO promotions — report this as a gap.
+- India (IN) has 100% NULL return_reason values in fact_return — report this as a gap.
+When a segment has zero data, say so explicitly. Do not fabricate or estimate values.
 ```
 
-### Metric Views
-Create these SQL views in the Genie space for pre-computed metrics:
+### Metric View Updates
 
-| View Name | SQL |
-|-----------|-----|
-| `v_order_completion_rate` | `SELECT s.country_cd, COUNT(*) AS total_orders, SUM(CASE WHEN o.order_status = 'COMPLETED' THEN 1 ELSE 0 END) AS completed, ROUND(100.0 * SUM(CASE WHEN o.order_status = 'COMPLETED' THEN 1 ELSE 0 END) / COUNT(*), 1) AS completion_rate FROM fact_order o JOIN dim_store s ON o.store_id = s.store_id GROUP BY s.country_cd` |
-| `v_return_rate_by_category` | `SELECT p.category, COUNT(ol.line_id) AS total_lines, COUNT(r.return_id) AS returns, ROUND(100.0 * COUNT(r.return_id) / COUNT(ol.line_id), 1) AS return_rate FROM fact_order_line ol JOIN dim_product p ON ol.product_id = p.product_id LEFT JOIN fact_return r ON ol.line_id = r.line_id GROUP BY p.category` |
-| `v_revenue_per_loyalty_member` | `SELECT c.country_cd, SUM(ol.line_total) AS total_revenue, COUNT(DISTINCT c.customer_id) AS member_count, ROUND(SUM(ol.line_total) / COUNT(DISTINCT c.customer_id), 0) AS rev_per_member FROM fact_customer c JOIN fact_order o ON c.customer_id = o.customer_id JOIN fact_order_line ol ON o.order_id = ol.order_id JOIN dim_store s ON o.store_id = s.store_id WHERE o.order_status = 'COMPLETED' AND c.signup_dt IS NOT NULL GROUP BY c.country_cd` |
-| `v_loyalty_redemption_by_tier` | `SELECT c.loyalty_tier, COUNT(DISTINCT c.customer_id) AS members, COUNT(DISTINCT CASE WHEN l.txn_type = 'REDEEM' THEN c.customer_id END) AS redeemers, ROUND(100.0 * COUNT(DISTINCT CASE WHEN l.txn_type = 'REDEEM' THEN c.customer_id END) / COUNT(DISTINCT c.customer_id), 1) AS redemption_rate FROM fact_customer c LEFT JOIN fact_loyalty_txn l ON c.customer_id = l.customer_id WHERE c.signup_dt IS NOT NULL AND c.loyalty_tier != 'NONE' GROUP BY c.loyalty_tier` |
-| `v_supplier_return_rate` | `SELECT s.supplier_id, s.supplier_name, s.quality_score, COUNT(r.return_id) AS returns, SUM(ol.quantity) AS units_sold, ROUND(100.0 * COUNT(r.return_id) / SUM(ol.quantity), 2) AS return_rate FROM dim_supplier s JOIN dim_product p ON s.supplier_id = p.supplier_id JOIN fact_order_line ol ON p.product_id = ol.product_id LEFT JOIN fact_return r ON ol.line_id = r.line_id GROUP BY s.supplier_id, s.supplier_name, s.quality_score` |
-| `v_store_profitability` | `SELECT s.store_id, s.country_cd, SUM(ol.line_total) AS revenue, SUM(ol.quantity * p.cost_price) AS cogs, COALESCE(SUM(r.refund_amount), 0) AS refunds, SUM(ol.line_total) - SUM(ol.quantity * p.cost_price) - COALESCE(SUM(r.refund_amount), 0) AS profit FROM dim_store s JOIN fact_order o ON s.store_id = o.store_id JOIN fact_order_line ol ON o.order_id = ol.order_id JOIN dim_product p ON ol.product_id = p.product_id LEFT JOIN fact_return r ON ol.line_id = r.line_id WHERE o.order_status = 'COMPLETED' GROUP BY s.store_id, s.country_cd` |
-| `v_inventory_turnover` | `SELECT p.category, SUM(ol.quantity * p.cost_price) AS cogs, AVG(i.cost_value) AS avg_inventory, ROUND(SUM(ol.quantity * p.cost_price) / AVG(i.cost_value), 1) AS turnover FROM fact_order_line ol JOIN dim_product p ON ol.product_id = p.product_id JOIN fact_order o ON ol.order_id = o.order_id LEFT JOIN fact_inventory i ON p.product_id = i.product_id WHERE o.order_status = 'COMPLETED' GROUP BY p.category` |
-| `v_promo_spend_per_return` | `WITH promo_cat AS (SELECT p2.category, SUM(pr.actual_spend_usd) AS spend FROM fact_promotion pr JOIN dim_product p2 ON pr.product_id = p2.product_id WHERE pr.product_id IS NOT NULL GROUP BY p2.category), ret_cat AS (SELECT p2.category, COUNT(*) AS returns FROM fact_return r JOIN fact_order_line ol ON r.line_id = ol.line_id JOIN dim_product p2 ON ol.product_id = p2.product_id GROUP BY p2.category) SELECT pc.category, pc.spend, rc.returns, ROUND(pc.spend / rc.returns, 2) AS spend_per_return FROM promo_cat pc JOIN ret_cat rc ON pc.category = rc.category` |
-| `v_dormant_members` | `WITH redeemers AS (SELECT DISTINCT customer_id FROM fact_loyalty_txn WHERE txn_type = 'REDEEM'), reviewers AS (SELECT DISTINCT customer_id FROM fact_review), members AS (SELECT customer_id, country_cd FROM fact_customer WHERE signup_dt IS NOT NULL) SELECT m.country_cd, COUNT(*) AS total_members, SUM(CASE WHEN r.customer_id IS NULL AND rv.customer_id IS NULL THEN 1 ELSE 0 END) AS dormant, ROUND(100.0 * SUM(CASE WHEN r.customer_id IS NULL AND rv.customer_id IS NULL THEN 1 ELSE 0 END) / COUNT(*), 1) AS dormant_pct FROM members m LEFT JOIN redeemers r ON m.customer_id = r.customer_id LEFT JOIN reviewers rv ON m.customer_id = rv.customer_id GROUP BY m.country_cd` |
-| `v_supplier_review_ratings` | `SELECT s.supplier_id, s.supplier_name, s.quality_score, AVG(r.rating) AS avg_rating, COUNT(r.review_id) AS review_count FROM dim_supplier s JOIN dim_product p ON s.supplier_id = p.supplier_id JOIN fact_review r ON p.product_id = r.product_id GROUP BY s.supplier_id, s.supplier_name, s.quality_score` |
-| `v_category_revenue` | `SELECT p.category, SUM(ol.line_total) AS revenue FROM fact_order_line ol JOIN dim_product p ON ol.product_id = p.product_id JOIN fact_order o ON ol.order_id = o.order_id WHERE o.order_status = 'COMPLETED' GROUP BY p.category ORDER BY revenue DESC` |
-| `v_loyalty_txn_by_country` | `SELECT c.country_cd, l.txn_type, COUNT(*) AS txn_count FROM fact_loyalty_txn l JOIN fact_customer c ON l.customer_id = c.customer_id GROUP BY c.country_cd, l.txn_type` |
-| `v_exec_summary` | `SELECT 'total_revenue' AS metric, CAST(SUM(ol.line_total) AS STRING) AS value FROM fact_order_line ol JOIN fact_order o ON ol.order_id = o.order_id WHERE o.order_status = 'COMPLETED' UNION ALL SELECT 'return_rate', CAST(ROUND(100.0 * (SELECT COUNT(*) FROM fact_return) / (SELECT COUNT(*) FROM fact_order_line), 1) AS STRING) UNION ALL SELECT 'total_customers', CAST(COUNT(*) AS STRING) FROM fact_customer UNION ALL SELECT 'loyalty_pct', CAST(ROUND(100.0 * SUM(CASE WHEN signup_dt IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*), 1) AS STRING) FROM fact_customer` |
+The following 5 tables need their metric views updated to match the Snowflake semantic view. Replace the existing metric view YAML for each table in the Genie Space. **No changes needed** for: `dim_employee`, `dim_product`, `dim_store`, `dim_supplier`, `fact_order_line`, `fact_loyalty_txn`, `fact_return`.
 
-## Step 2: Create Supervisor Agent (Optional)
+#### fact_customer — add `member_count`, `member_pct`, `is_member`
 
-If using a supervisor agent pattern:
+```yaml
+version: 1.1
+
+source: |-
+  SELECT customer_id, customer_name, country_cd, city, gender, age_band,
+         loyalty_tier, signup_dt, is_active
+  FROM `<YOUR_CATALOG>`.retailiq.fact_customer
+
+comment: Customer demographics and loyalty segmentation metrics
+
+dimensions:
+  - name: country_cd
+    expr: country_cd
+    comment: Customer country code
+    display_name: Country
+
+  - name: gender
+    expr: gender
+    comment: Customer gender
+    display_name: Gender
+
+  - name: age_band
+    expr: age_band
+    comment: Customer age group
+    display_name: Age Band
+
+  - name: loyalty_tier
+    expr: loyalty_tier
+    comment: "Customer loyalty program tier: NONE, BRONZE, SILVER, GOLD, PLATINUM. NONE means non-member."
+    display_name: Loyalty Tier
+
+  - name: is_active
+    expr: is_active
+    comment: Whether the customer is currently active
+    display_name: Active Status
+
+  - name: is_member
+    expr: "CASE WHEN signup_dt IS NOT NULL THEN 1 ELSE 0 END"
+    comment: "1 if customer has a signup date (loyalty member), 0 otherwise. Use to count or filter loyalty members."
+    display_name: Is Member
+
+measures:
+  - name: customer_count
+    expr: COUNT(1)
+    comment: Total number of customers
+    display_name: Customer Count
+
+  - name: member_count
+    expr: "COUNT(DISTINCT CASE WHEN signup_dt IS NOT NULL THEN customer_id END)"
+    comment: "Count of distinct customers with a non-null signup date (loyalty members). Use as denominator for per-member metrics."
+    display_name: Member Count
+
+  - name: member_pct
+    expr: "ROUND(100.0 * COUNT(DISTINCT CASE WHEN signup_dt IS NOT NULL THEN customer_id END) / COUNT(1), 1)"
+    comment: Percentage of customers who are loyalty members
+    display_name: Member %
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+
+  - name: distinct_city_count
+    expr: COUNT(DISTINCT city)
+    comment: Number of distinct cities with customers
+    display_name: Distinct Cities
+```
+
+#### fact_order — add completed/cancelled/pending metrics
+
+```yaml
+version: 1.1
+
+source: |-
+  SELECT order_id, customer_id, store_id, order_dt, order_status,
+         payment_method, total_amount, discount_amount
+  FROM `<YOUR_CATALOG>`.retailiq.fact_order
+
+comment: "Order revenue, discount, and volume analysis. IMPORTANT: For revenue calculations, always filter order_status = 'COMPLETED'."
+
+dimensions:
+  - name: order_status
+    expr: order_status
+    comment: "Current status of the order: COMPLETED, CANCELLED, PENDING. Use COMPLETED for revenue."
+    display_name: Order Status
+
+  - name: payment_method
+    expr: payment_method
+    comment: Payment method used
+    display_name: Payment Method
+
+  - name: order_month
+    expr: "DATE_TRUNC('MONTH', order_dt)"
+    comment: Month the order was placed
+    display_name: Order Month
+
+  - name: store_id
+    expr: store_id
+    comment: Store where the order was placed
+    display_name: Store ID
+
+  - name: customer_id
+    expr: customer_id
+    comment: Customer who placed the order
+    display_name: Customer ID
+
+  - name: is_completed
+    expr: "CASE WHEN order_status = 'COMPLETED' THEN 1 ELSE 0 END"
+    comment: "1 if order is completed, 0 otherwise."
+    display_name: Is Completed
+
+  - name: is_cancelled
+    expr: "CASE WHEN order_status = 'CANCELLED' THEN 1 ELSE 0 END"
+    comment: "1 if order is cancelled, 0 otherwise."
+    display_name: Is Cancelled
+
+  - name: is_pending
+    expr: "CASE WHEN order_status = 'PENDING' THEN 1 ELSE 0 END"
+    comment: "1 if order is pending, 0 otherwise."
+    display_name: Is Pending
+
+measures:
+  - name: total_revenue
+    expr: SUM(total_amount)
+    comment: "Sum of all order amounts across ALL statuses. WARNING: for actual revenue, use completed_revenue instead."
+    display_name: Total Revenue (All Statuses)
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: completed_revenue
+    expr: "SUM(CASE WHEN order_status = 'COMPLETED' THEN total_amount ELSE 0 END)"
+    comment: "Sum of order amounts for COMPLETED orders only. This is the correct revenue metric."
+    display_name: Completed Revenue
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: non_completed_amount
+    expr: "SUM(CASE WHEN order_status IN ('CANCELLED', 'PENDING') THEN total_amount ELSE 0 END)"
+    comment: "Sum of order amounts for CANCELLED or PENDING orders — revenue at risk or lost."
+    display_name: Non-Completed Order Amount
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: total_discount
+    expr: SUM(discount_amount)
+    comment: Sum of all discount amounts
+    display_name: Total Discount
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: order_count
+    expr: COUNT(1)
+    comment: Total number of orders
+    display_name: Order Count
+
+  - name: completed_order_count
+    expr: "SUM(CASE WHEN order_status = 'COMPLETED' THEN 1 ELSE 0 END)"
+    comment: Number of completed orders
+    display_name: Completed Orders
+
+  - name: cancelled_order_count
+    expr: "SUM(CASE WHEN order_status = 'CANCELLED' THEN 1 ELSE 0 END)"
+    comment: Number of cancelled orders
+    display_name: Cancelled Orders
+
+  - name: pending_order_count
+    expr: "SUM(CASE WHEN order_status = 'PENDING' THEN 1 ELSE 0 END)"
+    comment: Number of pending orders
+    display_name: Pending Orders
+
+  - name: completion_rate
+    expr: "ROUND(100.0 * SUM(CASE WHEN order_status = 'COMPLETED' THEN 1 ELSE 0 END) / COUNT(1), 1)"
+    comment: Percentage of orders that are completed
+    display_name: Completion Rate %
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+
+  - name: avg_order_value
+    expr: AVG(total_amount)
+    comment: Average order amount
+    display_name: Avg Order Value
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+```
+
+#### fact_inventory — add `distinct_product_count`, `distinct_store_count`
+
+```yaml
+version: 1.1
+
+source: |-
+  SELECT inventory_id, product_id, store_id, snapshot_dt, stock_qty,
+         reorder_point, days_on_hand, cost_value
+  FROM `<YOUR_CATALOG>`.retailiq.fact_inventory
+
+comment: "Inventory stock levels, cost valuation, and replenishment metrics. NOTE: Singapore (SG) has ZERO inventory records."
+
+dimensions:
+  - name: product_id
+    expr: product_id
+    comment: Product identifier
+    display_name: Product ID
+
+  - name: store_id
+    expr: store_id
+    comment: Store identifier
+    display_name: Store ID
+
+  - name: snapshot_month
+    expr: "DATE_TRUNC('MONTH', snapshot_dt)"
+    comment: Month of the inventory snapshot
+    display_name: Snapshot Month
+
+measures:
+  - name: total_stock_qty
+    expr: SUM(stock_qty)
+    comment: Total units in stock
+    display_name: Total Stock Qty
+
+  - name: total_cost_value
+    expr: SUM(cost_value)
+    comment: Total inventory cost valuation
+    display_name: Total Cost Value
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: avg_days_on_hand
+    expr: AVG(days_on_hand)
+    comment: Average number of days inventory is held
+    display_name: Avg Days on Hand
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+
+  - name: snapshot_count
+    expr: COUNT(1)
+    comment: Number of inventory snapshots
+    display_name: Snapshot Count
+
+  - name: distinct_product_count
+    expr: COUNT(DISTINCT product_id)
+    comment: Number of unique products in inventory
+    display_name: Distinct Products
+
+  - name: distinct_store_count
+    expr: COUNT(DISTINCT store_id)
+    comment: Number of unique stores with inventory records
+    display_name: Distinct Stores
+```
+
+#### fact_promotion — add `distinct_store_count`
+
+```yaml
+version: 1.1
+
+source: |-
+  SELECT promo_id, promo_name, product_id, store_id, promo_type,
+         discount_pct, start_dt, end_dt, budget_usd, actual_spend_usd
+  FROM `<YOUR_CATALOG>`.retailiq.fact_promotion
+
+comment: "Promotion budget, spend, and effectiveness analysis. NOTE: BOGO promotions do not exist for India (IN) and South Korea (KR)."
+
+dimensions:
+  - name: promo_type
+    expr: promo_type
+    comment: "Type of promotion: DISCOUNT, BOGO, BUNDLE, CLEARANCE, SEASONAL"
+    display_name: Promotion Type
+
+  - name: store_id
+    expr: store_id
+    comment: Store targeted by the promotion
+    display_name: Store ID
+
+  - name: product_id
+    expr: product_id
+    comment: Product targeted by the promotion
+    display_name: Product ID
+
+  - name: start_month
+    expr: "DATE_TRUNC('MONTH', start_dt)"
+    comment: Month the promotion started
+    display_name: Start Month
+
+measures:
+  - name: total_budget
+    expr: SUM(budget_usd)
+    comment: Total promotional budget
+    display_name: Total Budget
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: total_actual_spend
+    expr: SUM(actual_spend_usd)
+    comment: Total actual promotional spend
+    display_name: Total Actual Spend
+    format:
+      type: currency
+      currency_code: USD
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: avg_discount_pct
+    expr: AVG(discount_pct)
+    comment: Average discount percentage
+    display_name: Avg Discount %
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 1
+
+  - name: promotion_count
+    expr: COUNT(1)
+    comment: Total number of promotions
+    display_name: Promotion Count
+
+  - name: distinct_store_count
+    expr: COUNT(DISTINCT store_id)
+    comment: Number of distinct stores with promotions
+    display_name: Distinct Stores with Promos
+```
+
+#### fact_review — add `distinct_reviewer_count`
+
+```yaml
+version: 1.1
+
+source: |-
+  SELECT review_id, customer_id, product_id, rating, review_text,
+         review_date, is_verified
+  FROM `<YOUR_CATALOG>`.retailiq.fact_review
+
+comment: "Customer review ratings and sentiment analysis. NOTE: Food & Beverage category has ZERO product reviews."
+
+dimensions:
+  - name: product_id
+    expr: product_id
+    comment: Product being reviewed
+    display_name: Product ID
+
+  - name: is_verified
+    expr: is_verified
+    comment: Whether the review is from a verified purchase
+    display_name: Verified Purchase
+
+  - name: review_month
+    expr: "DATE_TRUNC('MONTH', review_date)"
+    comment: Month the review was submitted
+    display_name: Review Month
+
+  - name: customer_id
+    expr: customer_id
+    comment: Customer who wrote the review
+    display_name: Customer ID
+
+measures:
+  - name: avg_rating
+    expr: AVG(rating)
+    comment: Average product rating
+    display_name: Avg Rating
+    format:
+      type: number
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: review_count
+    expr: COUNT(1)
+    comment: Total number of reviews
+    display_name: Review Count
+
+  - name: distinct_product_count
+    expr: COUNT(DISTINCT product_id)
+    comment: Number of unique products reviewed
+    display_name: Distinct Products Reviewed
+
+  - name: distinct_reviewer_count
+    expr: COUNT(DISTINCT customer_id)
+    comment: Number of unique customers who submitted reviews
+    display_name: Distinct Reviewers
+```
+
+
+
+---
+
+## Step 2: Create Knowledge Assistant
+
+1. Go to **Playground** → **Knowledge Assistants**
+2. Name: `retaildocs`
+3. Upload the batched `.txt` files from `docs_batched/` directory (products, supplier_audits, industry_research)
+4. Instructions:
+```
+Search the uploaded retail documents for product descriptions, supplier audit reports,
+and industry research. When asked about products, suppliers, benchmarks, or industry
+trends, search these documents and return relevant findings.
+```
+
+---
+
+## Step 3: Create Supervisor Agent
 
 ### Description
 ```
@@ -69,11 +525,46 @@ for APAC retail operations in JP, KR, IN, AU, and SG.
 ```
 Route all questions to the RetailIQ Genie space. For questions that mention
 "search", "research", "benchmarks", "audit reports", or "industry", also query
-the doc_document table for relevant unstructured content. Always combine structured
-query results with document findings when both are relevant.
+the retaildocs Knowledge Assistant for relevant unstructured content. Always combine
+structured query results with document findings when both are relevant.
 ```
 
-## Step 3: Teardown Commands (if needed)
+### Sub-agents
+- **Genie**: `Retail Operations Analytics` (the Genie Space)
+- **Knowledge Assistant**: `retaildocs`
+
+---
+
+## Step 4: Apply Structural Gaps
+
+Run these on the Databricks tables to match the Snowflake data:
+
+```sql
+USE CATALOG `<YOUR_CATALOG>`;
+USE SCHEMA retailiq;
+
+DELETE FROM fact_loyalty_txn WHERE txn_type = 'BONUS'
+  AND customer_id IN (SELECT customer_id FROM fact_customer WHERE country_cd IN ('SG', 'IN'));
+
+DELETE FROM fact_review WHERE product_id IN
+  (SELECT product_id FROM dim_product WHERE category = 'Food & Beverage');
+
+DELETE FROM fact_inventory WHERE store_id IN
+  (SELECT store_id FROM dim_store WHERE country_cd = 'SG');
+
+DELETE FROM fact_promotion WHERE promo_type = 'BOGO'
+  AND store_id IN (SELECT store_id FROM dim_store WHERE country_cd IN ('IN', 'KR'));
+
+UPDATE fact_return SET return_reason = NULL WHERE line_id IN
+  (SELECT ol.line_id FROM fact_order_line ol
+   JOIN fact_order o ON ol.order_id = o.order_id
+   JOIN dim_store s ON o.store_id = s.store_id
+   WHERE s.country_cd = 'IN');
+```
+
+---
+
+## Step 5: Teardown Commands (if needed)
 
 ```sql
 USE CATALOG `<YOUR_CATALOG>`;

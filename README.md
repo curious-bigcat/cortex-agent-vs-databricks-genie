@@ -120,13 +120,29 @@ Supervisor Agent
 
 ### Configuration Parity
 
-Both platforms have equivalent metadata where their architectures allow:
+We ensured both platforms have equivalent metadata so any performance gap reflects agent capability, not configuration asymmetry. The table below shows what each platform provides natively vs what required manual intervention.
 
-| Snowflake | Databricks Equivalent |
-|---|---|
-| Semantic view column descriptions | Metric view dimensions/measures + AI-generated metadata from Unity Catalog |
-| Cortex Search (3 services) | Knowledge Assistant (1 index) |
-| Agent instructions | Genie General Instructions (10 data rules) |
+| Capability | Snowflake (Native) | Databricks (Manual Equivalent) |
+|---|---|---|
+| **Table descriptions** | Semantic view `description` field per table | `COMMENT ON TABLE` — must run ALTER statements manually for all 12 tables |
+| **Column descriptions** | Semantic view `dimensions`/`facts` with descriptions | `ALTER TABLE ... ALTER COLUMN ... COMMENT` — must run per column, per table (~80 statements) |
+| **Cross-table relationships** | Semantic view `relationships` block — 14 join paths declared as structured YAML | No native equivalent. Encoded as free-text in Genie General Instructions. Agent must parse text to understand joins. |
+| **Computed facts** | `expr` fields with CASE logic (e.g. `IS_COMPLETED_ORDER`, `HAS_SIGNUP_DATE`) | Metric view `dimensions` with CASE expressions — functionally equivalent but per-table only |
+| **Aggregate metrics** | `metrics` block (e.g. `COMPLETED_REVENUE = SUM(CASE WHEN ...)`) | Metric view `measures` — functionally equivalent |
+| **Filter labels** | Named filters like `COMPLETED_ORDERS` with `labels: [filter]` | No native equivalent. Must be encoded in metric view comments or General Instructions. |
+| **Document search** | Cortex Search — automatic vector indexing, semantic retrieval | Knowledge Assistant — manual document upload, separate sub-agent |
+| **Agent orchestration** | Single Cortex Agent with Analyst + Search tools | Supervisor Agent manually routing to Genie + Knowledge Assistant sub-agents |
+| **Structural gap detection** | Agent receives zero-row SQL results and reports the gap | Agent must write correct SQL first; Genie often hallucinates values instead of reporting zero rows |
+
+#### What Snowflake provides natively that Databricks requires manual work
+
+1. **Relationships as structured metadata**: Snowflake's semantic view declares join paths (`left_table`, `right_table`, `relationship_columns`, `join_type`) as structured YAML. The agent uses these to build correct multi-table SQL. Databricks has no native relationship declaration — we encoded all 14 join paths as free-text instructions, which the agent may or may not follow.
+
+2. **Computed columns with business descriptions**: Semantic view `facts` like `COMPLETED_REVENUE` include both the SQL expression AND a natural-language description of when to use it. Databricks metric views support the expression but descriptions are limited to short `comment` fields.
+
+3. **Cross-table metric awareness**: Snowflake's semantic view metrics can reference columns and relationships across tables in a single declaration. Databricks metric views are strictly per-table — cross-table logic must be written by the agent at query time, or pre-computed as SQL views (which we deliberately excluded to test raw agent capability).
+
+4. **Unified agent**: Snowflake's Cortex Agent natively combines SQL generation (Analyst) and document search (Cortex Search) in one agent. Databricks requires a manually configured Supervisor Agent that routes between a Genie sub-agent (SQL) and a Knowledge Assistant sub-agent (docs) — adding latency and routing errors.
 
 ## Project Structure
 
