@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { DATABRICKS_ENDPOINT } from "@/lib/constants"
+import { getDomainConfig } from "@/lib/constants"
 import { createStream, updateStream, completeStream, failStream, getStream } from "@/lib/stream-store"
 import type { AgentContentItem, AgentResponse } from "@/lib/agent-types"
 
@@ -15,9 +15,14 @@ function getDatabricksPat(): string {
 // POST: start Databricks request in background, return requestId
 export async function POST(request: NextRequest) {
   try {
-    const { questionText } = await request.json()
+    const { questionText, domain } = await request.json()
     if (!questionText) {
       return NextResponse.json({ error: "questionText is required" }, { status: 400 })
+    }
+
+    const config = getDomainConfig(domain)
+    if (!config.dbxEndpoint) {
+      return NextResponse.json({ error: `Databricks endpoint not configured for ${domain || "pharma"} domain` }, { status: 400 })
     }
 
     const requestId = `dbx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -30,7 +35,7 @@ export async function POST(request: NextRequest) {
       fullTextForScoring: "",
     })
 
-    processDbx(requestId, questionText)
+    processDbx(requestId, questionText, config.dbxEndpoint)
 
     return NextResponse.json({ requestId })
   } catch (err) {
@@ -52,7 +57,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(state)
 }
 
-async function processDbx(requestId: string, questionText: string) {
+async function processDbx(requestId: string, questionText: string, endpoint: string) {
   try {
     const pat = getDatabricksPat()
     const body = { input: [{ role: "user", content: questionText }] }
@@ -70,7 +75,7 @@ async function processDbx(requestId: string, questionText: string) {
 
     let res: Response
     try {
-      res = await fetch(DATABRICKS_ENDPOINT, {
+      res = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

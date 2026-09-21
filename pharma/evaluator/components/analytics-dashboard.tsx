@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useCallback, useState } from "react"
+import type { Domain } from "@/lib/constants"
 
 interface ResultRow {
   QUESTION_ID: string
@@ -12,7 +13,6 @@ interface ResultRow {
   SCORING_RATIONALE: string
   SCORED_AT: string
   RUN_ID: string
-  TIER: number
   QUESTION_TEXT: string
   DBX_FAILURE_PATTERN?: string | null
 }
@@ -36,18 +36,19 @@ const SCORE_COLORS: Record<number, string> = {
 }
 
 
-export default function AnalyticsDashboard() {
+export default function AnalyticsDashboard({ domain = "pharma" }: { domain?: Domain }) {
   const [results, setResults] = useState<ResultRow[]>([])
   const [loading, setLoading] = useState(true)
 
 
   useEffect(() => {
-    fetch("/api/results")
+    setLoading(true)
+    fetch(`/api/results?domain=${domain}`)
       .then((r) => r.json())
       .then((data) => { if (data.results) setResults(data.results) })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [domain])
 
   if (loading) return <main className="w-full py-8 px-4 text-center text-muted-foreground">Loading...</main>
 
@@ -212,14 +213,13 @@ export default function AnalyticsDashboard() {
             <div className="bg-muted/30 rounded-md p-2.5">
               <div className="font-bold text-foreground/80 mb-1">Exploit Pattern Map</div>
               <div className="space-y-1 text-foreground/70 text-[10px]">
-                <div><span className="font-semibold">3 Search Services vs 1:</span> All Q01-Q30 (every question is hybrid)</div>
-                <div><span className="font-semibold">Deep joins (4-5 hops):</span> Q01, Q05, Q07, Q08, Q14, Q15, Q18, Q20, Q21, Q23, Q25, Q28, Q30</div>
-                <div><span className="font-semibold">Multi-step CTEs:</span> Q05, Q06, Q10-Q25, Q28, Q29</div>
-                <div><span className="font-semibold">Column traps:</span> Q01, Q02, Q05-Q07, Q11, Q13, Q15, Q21, Q25, Q27, Q28</div>
-                <div><span className="font-semibold">Cross-tool synthesis:</span> All Q01-Q30 (SQL result handed to search)</div>
-                <div><span className="font-semibold">Negation patterns:</span> Q02, Q09, Q12, Q14, Q19, Q22, Q26, Q28</div>
-                <div><span className="font-semibold">Temporal:</span> Q03, Q11, Q13, Q17, Q24, Q27</div>
-                <div><span className="font-semibold">Composite metrics:</span> Q15, Q21, Q25, Q28, Q30</div>
+                <div><span className="font-semibold">Cross-tool synthesis:</span> All Q01-Q14 (every question is hybrid SQL + search)</div>
+                <div><span className="font-semibold">Negation / NOT EXISTS:</span> Q01, Q02, Q08, Q11</div>
+                <div><span className="font-semibold">Cartesian product traps:</span> Q03, Q04, Q05, Q07</div>
+                <div><span className="font-semibold">Multi-table joins (3-4 hops):</span> Q04, Q06, Q07, Q09, Q13</div>
+                <div><span className="font-semibold">Wrong denominator traps:</span> Q03, Q04, Q05, Q10, Q14</div>
+                <div><span className="font-semibold">Metric hallucination:</span> Q05, Q06, Q07, Q08</div>
+                <div><span className="font-semibold">Temporal / date logic:</span> Q11, Q12</div>
               </div>
             </div>
             <div className="bg-muted/30 rounded-md p-2.5">

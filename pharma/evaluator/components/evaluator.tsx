@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import AgentOutputPanel from "@/components/agent-output"
 import type { AgentResponse } from "@/lib/agent-types"
+import type { Domain } from "@/lib/constants"
 
 interface Question {
   QUESTION_ID: string
-  TIER: number
   TRAPS: string
   QUESTION_TEXT: string
   EXPECTED_ANSWER: string
@@ -84,19 +84,7 @@ function deltaBadge(delta: number | null) {
   return <span className={`inline-block rounded-md px-2 py-0.5 text-xs font-bold ${cls}`}>{delta > 0 ? `+${delta}` : delta}</span>
 }
 
-function tierBadge(tier: number) {
-  const colors: Record<number, string> = {
-    3: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-    4: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
-    5: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
-    6: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
-  }
-  return (
-    <span className={`px-2 py-0.5 rounded text-xs font-medium ${colors[tier] || ""}`}>
-      Tier {tier}
-    </span>
-  )
-}
+
 
 /** Convert HTML tables from clipboard into pipe-delimited text. */
 function htmlToText(html: string): string {
@@ -305,7 +293,7 @@ function OutputPanel({
   )
 }
 
-export default function Evaluator() {
+export default function Evaluator({ domain = "pharma" }: { domain?: Domain }) {
   const [questions, setQuestions] = useState<Question[]>([])
   const [selectedId, setSelectedId] = useState("")
   const [snowflakeOutput, setSnowflakeOutput] = useState("")
@@ -335,7 +323,6 @@ export default function Evaluator() {
     SCORING_RATIONALE: string
     SCORED_AT: string
     RUN_ID: string
-    TIER: number
     QUESTION_TEXT: string
     DBX_FAILURE_PATTERN?: string | null
   }
@@ -343,7 +330,7 @@ export default function Evaluator() {
   const [showResults, setShowResults] = useState(true)
 
   useEffect(() => {
-    fetch("/api/questions")
+    fetch(`/api/questions?domain=${domain}`)
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -352,7 +339,7 @@ export default function Evaluator() {
         }
       })
       .catch((e) => setError(e.message))
-  }, [])
+  }, [domain])
 
   const selected = questions.find((q) => q.QUESTION_ID === selectedId)
 
@@ -399,7 +386,7 @@ export default function Evaluator() {
       const res = await fetch(`/api/agent/${platform}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionText: selected.QUESTION_TEXT }),
+        body: JSON.stringify({ questionText: selected.QUESTION_TEXT, domain }),
       })
       const { requestId, error } = await res.json()
       if (error) throw new Error(error)
@@ -420,12 +407,12 @@ export default function Evaluator() {
         fetch("/api/agent/snowflake", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questionText: selected.QUESTION_TEXT }),
+          body: JSON.stringify({ questionText: selected.QUESTION_TEXT, domain }),
         }),
         fetch("/api/agent/databricks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questionText: selected.QUESTION_TEXT }),
+          body: JSON.stringify({ questionText: selected.QUESTION_TEXT, domain }),
         }),
       ])
       const [sfData, dbxData] = await Promise.all([sfRes.json(), dbxRes.json()])
@@ -457,6 +444,7 @@ export default function Evaluator() {
       images: images.length > 0 ? images : undefined,
       platform,
       runId,
+      domain,
     }
   }
 
@@ -516,13 +504,13 @@ export default function Evaluator() {
 
   async function loadResults() {
     try {
-      const res = await fetch(`/api/results`)
+      const res = await fetch(`/api/results?domain=${domain}`)
       const data = await res.json()
       if (data.results) setResults(data.results)
     } catch { /* ignore */ }
   }
 
-  useEffect(() => { loadResults() }, [])
+  useEffect(() => { loadResults(); clearAll(); }, [domain])
 
   function clearAll() {
     setSnowflakeScores(null)
@@ -551,14 +539,13 @@ export default function Evaluator() {
           >
             {questions.map((q) => (
               <option key={q.QUESTION_ID} value={q.QUESTION_ID}>
-                {q.QUESTION_ID} [Tier {q.TIER}] — {q.QUESTION_TEXT.substring(0, 80)}...
+                {q.QUESTION_ID} — {q.QUESTION_TEXT.substring(0, 80)}...
               </option>
             ))}
           </select>
           {selected && (
             <div className="space-y-3">
               <div className="flex gap-2 items-center">
-                {tierBadge(selected.TIER)}
                 {selected.TRAPS && selected.TRAPS.split(",").map((t) => (
                   <Badge key={t} variant="outline" className="text-xs">{t.trim()}</Badge>
                 ))}
@@ -838,7 +825,7 @@ export default function Evaluator() {
                     <thead className="sticky top-0 z-10 bg-background shadow-[0_1px_3px_rgba(0,0,0,0.08)]">
                       <tr className="border-b-2 border-foreground/20">
                         <th className="py-2 px-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" rowSpan={2}>Q#</th>
-                        <th className="py-2 px-2 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider" rowSpan={2}>Tier</th>
+
                         <th className="py-2 px-1 text-center text-xs font-semibold uppercase tracking-wider border-l border-foreground/10" colSpan={2}>Total</th>
                         <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10 bg-muted/20" colSpan={2}>Acc</th>
                         <th className="py-2 px-1 text-center text-xs font-semibold text-muted-foreground uppercase tracking-wider border-l border-foreground/10" colSpan={2}>Gnd</th>
@@ -863,8 +850,6 @@ export default function Evaluator() {
                         const sf = results.find(r => r.QUESTION_ID === q.QUESTION_ID && r.PLATFORM === "SNOWFLAKE")
                         const dbx = results.find(r => r.QUESTION_ID === q.QUESTION_ID && r.PLATFORM === "DATABRICKS")
                         const delta = sf && dbx ? sf.SCORE_TOTAL - dbx.SCORE_TOTAL : null
-                        const prevTier = qIdx > 0 ? questions[qIdx - 1].TIER : q.TIER
-                        const tierBreak = q.TIER !== prevTier
                         const dimPairs: { sfVal: number | undefined; dbxVal: number | undefined; alt: boolean }[] = [
                           { sfVal: sf?.SCORE_ACCURACY, dbxVal: dbx?.SCORE_ACCURACY, alt: true },
                           { sfVal: sf?.SCORE_GROUNDEDNESS, dbxVal: dbx?.SCORE_GROUNDEDNESS, alt: false },
@@ -873,11 +858,11 @@ export default function Evaluator() {
                         return (
                           <tr
                             key={q.QUESTION_ID}
-                            className={`hover:bg-blue-50/50 dark:hover:bg-blue-950/20 cursor-pointer transition-colors ${tierBreak ? "border-t-2 border-foreground/15" : "border-t border-foreground/5"} ${qIdx % 2 === 0 ? "" : "bg-muted/10"}`}
+                            className={`hover:bg-blue-50/50 dark:hover:bg-blue-950/20 cursor-pointer transition-colors border-t border-foreground/5 ${qIdx % 2 === 0 ? "" : "bg-muted/10"}`}
                             onClick={() => { setSelectedId(q.QUESTION_ID); clearAll() }}
                           >
                             <td className="py-2 px-2 font-mono font-bold text-sm">{q.QUESTION_ID}</td>
-                            <td className="py-2 px-2">{tierBadge(q.TIER)}</td>
+
                             <td className="py-2 px-1 text-center border-l border-foreground/10">
                               {totalPill(sf?.SCORE_TOTAL, "sf")}
                             </td>

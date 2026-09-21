@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getServiceToken } from "@/lib/snowflake"
-import { CORTEX_AGENT_PATH } from "@/lib/constants"
+import { getDomainConfig } from "@/lib/constants"
 import { parseCortexResponse } from "@/lib/agent-stream"
 import { createStream, updateStream, completeStream, failStream, getStream } from "@/lib/stream-store"
 import type { AgentContentItem } from "@/lib/agent-types"
@@ -35,17 +35,18 @@ function getAuthToken(): string {
 // POST: start the Cortex Agent stream in background, return requestId
 export async function POST(request: NextRequest) {
   try {
-    const { questionText } = await request.json()
+    const { questionText, domain } = await request.json()
     if (!questionText) {
       return NextResponse.json({ error: "questionText is required" }, { status: 400 })
     }
 
+    const config = getDomainConfig(domain)
     const requestId = `sf_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
     createStream(requestId)
 
     const accountUrl = getAccountUrl()
     const token = getAuthToken()
-    const url = `${accountUrl}${CORTEX_AGENT_PATH}`
+    const url = `${accountUrl}${config.agentPath}`
 
     // Fire and forget — process stream in background
     processStream(requestId, url, token, questionText)

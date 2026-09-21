@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from "next/server"
 import { querySnowflakeLongRunning } from "@/lib/snowflake"
-import { DB_SCHEMA, SCORING_MODEL } from "@/lib/constants"
+import { getDomainConfig, SCORING_MODEL } from "@/lib/constants"
 
 export const dynamic = "force-dynamic"
 
-const SCORING_PROMPT = `You are a benchmark judge scoring a clinical trial AI agent's answer.
+function buildScoringPrompt(scoringContext: string) {
+  return `You are a benchmark judge scoring a ${scoringContext}'s answer.
 Score on 3 dimensions (1-5 each). Be lenient on formatting and presentation — focus on substance.
 
-1. ACCURACY — Are the numbers right? (5 = all match, 1 = fabricated)
-2. GROUNDEDNESS — Is it grounded in data? (5 = fully grounded, 1 = hallucinated)
-3. RELEVANCE — Does it answer what was asked? (5 = fully addressed, 1 = off-topic)
+1. ACCURACY — Are the numbers right? (5 = all key numbers match within 5%, 1 = fabricated/hallucinated numbers)
+2. GROUNDEDNESS — Is it grounded in actual data and corpus? (5 = fully grounded with citations, 1 = hallucinated from training data)
+3. RELEVANCE — Does it answer what was asked? (5 = fully addressed all parts, 1 = off-topic or missing key parts)
 
 RULES:
 - Compare agent output against the expected answer and key numbers. Numbers within 5% are fine.
@@ -22,16 +23,13 @@ Return ONLY valid JSON:
   "accuracy": <1-5>,
   "groundedness": <1-5>,
   "relevance": <1-5>,
-  "rationale": "<2-3 sentences explaining scores, referencing specific numbers that matched or didn't>",
-  "failure_pattern": "<Always provide 2-3 lines identifying what went wrong or what challenge this question poses. Name the root cause pattern: wrong-join-path, wrong-denominator, metric-hallucination, multi-table-join-failure, negation-blindness, cartesian-product, document-grounding-failure, CTE-planning-failure, or describe a new one. If the answer is perfect (all 5s), write 'none'.>"
+  "rationale": "<Structured rationale with these sections — Accuracy: [which key numbers matched or didn't, by how much]. Groundedness: [was the answer grounded in actual data queries and corpus, or hallucinated from training knowledge?]. Relevance: [did it answer all parts of the question?]. Keep each section 1-2 sentences.>",
+  "failure_pattern": "<Always provide a structured failure analysis: (1) Name the root cause pattern: wrong-join-path, wrong-denominator, metric-hallucination, multi-table-join-failure, negation-blindness, cartesian-product, document-grounding-failure, CTE-planning-failure, or describe a new one. (2) Explain what the agent did wrong technically (e.g., used INNER JOIN instead of LEFT JOIN, included screen failures in denominator, joined on wrong key). (3) State the impact: how far off the numbers are from correct (e.g., '2x inflation', '45% relative error', 'inverted ranking'). If the answer is perfect (all 5s), write 'none'.>"
 }`
+}
 
 
 function buildMessages(promptText: string, images?: string[]) {
-  // Cortex COMPLETE vision requires images on a Snowflake stage (TO_FILE).
-  // Base64 images from the browser can't be passed directly.
-  // Instead, we describe the screenshots in text for the LLM and note
-  // that visual-only content (charts) should be described by the user in the text field.
   if (images && images.length > 0) {
     return promptText + `\n\n[NOTE: ${images.length} screenshot(s) were provided but cannot be processed visually. The scoring is based on the text output above. If charts or tables contain numbers not in the text, they may be missed.]`
   }
@@ -41,15 +39,17 @@ function buildMessages(promptText: string, images?: string[]) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { questionId, questionText, expectedAnswer, keyNumbers, traps, agentOutput, images, platform, runId } = body
+    const { questionId, questionText, expectedAnswer, keyNumbers, traps, agentOutput, images, platform, runId, domain } = body
+    const config = getDomainConfig(domain)
 
     if (!questionId || (!agentOutput && (!images || images.length === 0))) {
       return NextResponse.json({ error: "questionId and agentOutput or images are required" }, { status: 400 })
     }
 
     const combinedOutput = agentOutput || "[No text output — only screenshots provided]"
+    const scoringPrompt = buildScoringPrompt(config.scoringContext)
 
-    const promptText = `${SCORING_PROMPT}
+    const promptText = `${scoringPrompt}
 
 QUESTION: ${questionText}
 
@@ -86,11 +86,11 @@ Score this output now. Return only the JSON object.`
 
     const resultId = crypto.randomUUID()
     const outputForStorage = agentOutput
-      ? agentOutput.substring(0, 16000)
+      ? agentOutput.substring(0, 64000)
       : `[${images?.length || 0} screenshot(s)]`
 
     const insertSql = `
-      INSERT INTO ${DB_SCHEMA}.TBL_BENCHMARK_RESULTS
+      INSERT INTO ${config.dbSchema}.TBL_BENCHMARK_RESULTS
       (result_id, question_id, platform, agent_output,
        score_accuracy, score_groundedness, score_relevance,
        score_usefulness, score_correctness, score_consequences,

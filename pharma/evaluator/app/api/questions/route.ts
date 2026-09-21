@@ -1,16 +1,19 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { querySnowflake } from "@/lib/snowflake"
-import { DB_SCHEMA } from "@/lib/constants"
+import { getDomainConfig } from "@/lib/constants"
 
 export const dynamic = "force-dynamic"
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const domain = request.nextUrl.searchParams.get("domain")
+    const { dbSchema } = getDomainConfig(domain)
+
     const rows = await querySnowflake(
-      `SELECT question_id, tier, traps, question_text, expected_answer, key_numbers,
+      `SELECT question_id, traps, question_text, expected_answer, key_numbers,
               scoring_5, scoring_3, scoring_1, complexity_type, dbx_failure_pattern,
               sf_tool_calls, sf_failures, dbx_tool_calls, dbx_failures
-       FROM ${DB_SCHEMA}.TBL_EXPECTED_ANSWERS
+       FROM ${dbSchema}.TBL_EXPECTED_ANSWERS
        ORDER BY question_id`
     )
     return NextResponse.json(rows)

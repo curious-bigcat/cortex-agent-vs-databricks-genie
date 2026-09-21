@@ -1,15 +1,17 @@
 "use client"
 
 import Image from "next/image"
-import { APP_TITLE, LOGO_SRC } from "@/lib/constants"
+import { APP_TITLE, LOGO_SRC, DOMAIN_CONFIG, type Domain } from "@/lib/constants"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 interface AppHeaderProps {
   view?: "evaluator" | "analytics"
   onViewChange?: (view: "evaluator" | "analytics") => void
+  domain?: Domain
+  onDomainChange?: (domain: Domain) => void
 }
 
-export function AppHeader({ view = "evaluator", onViewChange }: AppHeaderProps) {
+export function AppHeader({ view = "evaluator", onViewChange, domain = "pharma", onDomainChange }: AppHeaderProps) {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border bg-background text-foreground">
       <div className="w-full px-4 h-14 flex items-center gap-4">
@@ -25,6 +27,27 @@ export function AppHeader({ view = "evaluator", onViewChange }: AppHeaderProps) 
         <span className="text-sm font-semibold tracking-tight">
           {APP_TITLE}
         </span>
+
+        {/* Domain switcher */}
+        {onDomainChange && (
+          <div className="flex items-center gap-1 ml-2 bg-muted/50 rounded-lg p-0.5">
+            {(Object.keys(DOMAIN_CONFIG) as Domain[]).map((d) => (
+              <button
+                key={d}
+                onClick={() => onDomainChange(d)}
+                className={`px-3 py-1.5 text-xs rounded-md transition-colors font-medium ${
+                  domain === d
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {d === "pharma" ? "Pharma" : "Retail"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* View tabs */}
         {onViewChange && (
           <nav className="flex items-center gap-1 ml-4">
             <button

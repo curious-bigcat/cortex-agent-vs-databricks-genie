@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="snowflake-source" content="cortex-agent-authored" />
+  <title>Cortex Agent Competitive Benchmark Playbook</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+      max-width: 900px; width: 100%; margin: 0 auto;
+      padding: clamp(16px, 4vw, 32px);
+      color: light-dark(#1e293b, #e2e8f0);
+      background: light-dark(#ffffff, #0f172a);
+      line-height: 1.6; font-size: 15px;
+    }
+    h1 { font-size: 28px; margin: 0 0 8px; color: light-dark(#0f172a, #f8fafc); border-bottom: 3px solid light-dark(#29B5E8, #38bdf8); padding-bottom: 12px; }
+    h2 { font-size: 21px; margin: 32px 0 12px; color: light-dark(#0f172a, #f1f5f9); border-bottom: 1px solid light-dark(#e2e8f0, #334155); padding-bottom: 6px; }
+    h3 { font-size: 17px; margin: 24px 0 8px; color: light-dark(#1e40af, #60a5fa); }
+    h4 { font-size: 15px; margin: 16px 0 6px; color: light-dark(#334155, #94a3b8); }
+    p, li { margin: 6px 0; }
+    ul, ol { padding-left: 24px; }
+    .subtitle { color: light-dark(#64748b, #94a3b8); font-size: 16px; margin: 0 0 24px; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .badge-t0 { background: light-dark(#dcfce7, #166534); color: light-dark(#166534, #bbf7d0); }
+    .badge-t1 { background: light-dark(#dbeafe, #1e3a5f); color: light-dark(#1e40af, #93c5fd); }
+    .badge-t2 { background: light-dark(#fef3c7, #713f12); color: light-dark(#92400e, #fcd34d); }
+    .badge-t3 { background: light-dark(#fee2e2, #7f1d1d); color: light-dark(#991b1b, #fca5a5); }
+    .badge-win { background: light-dark(#dcfce7, #166534); color: light-dark(#166534, #bbf7d0); }
+    .badge-tie { background: light-dark(#f3f4f6, #374151); color: light-dark(#6b7280, #9ca3af); }
+    .badge-lose { background: light-dark(#fee2e2, #7f1d1d); color: light-dark(#991b1b, #fca5a5); }
+    code { background: light-dark(#f1f5f9, #1e293b); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+    .table-wrap { overflow-x: auto; margin: 12px 0; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid light-dark(#e2e8f0, #334155); padding: 8px 12px; text-align: left; }
+    th { background: light-dark(#f8fafc, #1e293b); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+    tr:nth-child(even) { background: light-dark(#f8fafc, #0f172a10); }
+    .callout { border-left: 4px solid; padding: 12px 16px; margin: 16px 0; border-radius: 0 6px 6px 0; }
+    .callout-critical { border-color: #ef4444; background: light-dark(#fef2f2, #450a0a); }
+    .callout-tip { border-color: #29B5E8; background: light-dark(#eff6ff, #0c1929); }
+    .callout-warn { border-color: #f59e0b; background: light-dark(#fffbeb, #451a03); }
+    .callout strong { display: block; margin-bottom: 4px; }
+    .section-num { color: light-dark(#29B5E8, #38bdf8); font-weight: 700; }
+    .toc { background: light-dark(#f8fafc, #1e293b); padding: 16px 24px; border-radius: 8px; margin: 24px 0; }
+    .toc ul { list-style: none; padding: 0; }
+    .toc li { padding: 4px 0; }
+    .toc a { color: light-dark(#2563eb, #60a5fa); text-decoration: none; }
+    .toc a:hover { text-decoration: underline; }
+    .gap { font-weight: 700; }
+    .gap-pos { color: light-dark(#16a34a, #4ade80); }
+    .gap-neg { color: light-dark(#dc2626, #f87171); }
+    .gap-zero { color: light-dark(#6b7280, #9ca3af); }
+    @media print {
+      body { max-width: 100%; padding: 20px; font-size: 12px; color: #1e293b; background: white; }
+      h1 { font-size: 24px; }
+      h2 { font-size: 18px; page-break-after: avoid; }
+      h3 { font-size: 15px; }
+      table { font-size: 11px; }
+      th, td { padding: 4px 8px; }
+      .callout { page-break-inside: avoid; }
+      .toc { page-break-after: always; }
+    }
+    .footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid light-dark(#e2e8f0, #334155); font-size: 13px; color: light-dark(#94a3b8, #64748b); }
+  </style>
+</head>
+<body>
+
+<h1>Snowflake Cortex Agent vs Databricks Genie</h1>
+<p class="subtitle">Competitive Benchmark Playbook for SEs &mdash; How to build, run, and win AI agent evaluations</p>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#data">1. Data Requirements</a></li>
+    <li><a href="#gaps">2. Structural Data Gaps</a></li>
+    <li><a href="#patterns">3. Failure Patterns (Ranked)</a></li>
+    <li><a href="#phrasing">4. Question Phrasing Guide</a></li>
+    <li><a href="#scoring">5. Scoring Framework</a></li>
+    <li><a href="#setup">6. Platform Setup Checklist</a></li>
+    <li><a href="#pitfalls">7. Common Pitfalls</a></li>
+    <li><a href="#results">8. Proven Results</a></li>
+    <li><a href="#domains">9. Extending to New Domains</a></li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="data"><span class="section-num">1.</span> Data Requirements</h2>
+
+<h3>1.1 Structured Data (SQL Tables)</h3>
+<ul>
+  <li><strong>8&ndash;12 tables</strong> in a star/snowflake schema with clear FK relationships</li>
+  <li><strong>5M+ total rows</strong> &mdash; enough that agents can&rsquo;t brute-force scan</li>
+  <li>Must have <strong>multi-hop join paths</strong> (3&ndash;4 hops from fact to outermost dimension)</li>
+</ul>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Table Type</th><th>Examples</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>Dimension (3&ndash;4)</td><td>Location, Product, Supplier, Employee</td><td>Force joins to get attributes (country, category, quality tier)</td></tr>
+    <tr><td>Core fact</td><td>Transaction / Order header</td><td>Hub connecting customers, locations, products</td></tr>
+    <tr><td>Detail fact</td><td>Transaction line items</td><td>Line-level detail that must join to parent fact</td></tr>
+    <tr><td>Secondary facts (3&ndash;4)</td><td>Returns, Reviews, Loyalty, Inventory</td><td>Require multi-hop joins to reach dimensions</td></tr>
+    <tr><td>Bridge/association</td><td>Promotions, Campaigns</td><td>Links two dimensions &mdash; creates cartesian risk</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>1.2 Unstructured Data (Documents)</h3>
+<ul>
+  <li><strong>3+ document collections</strong> with different content types</li>
+  <li><strong>1,000+ documents</strong> (enough to require search, not just scan)</li>
+  <li>Must contain <strong>specific verifiable numbers</strong> that benchmark questions reference</li>
+</ul>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Collection</th><th>Content</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td>Entity descriptions</td><td>Product specs, patient profiles, asset details</td><td>Tests entity-level document retrieval</td></tr>
+    <tr><td>Audit/compliance reports</td><td>Quality scores, findings, recommendations</td><td>Tests correlation: structured metrics vs document findings</td></tr>
+    <tr><td>Industry research</td><td>Market data, KPIs, trends with specific numbers</td><td>Tests grounding in documents vs hallucinating benchmarks</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>1.3 Data Skew (Critical)</h3>
+
+<div class="callout callout-critical">
+  <strong>Uniform data makes ALL benchmark questions useless.</strong>
+  When distributions are flat, the &ldquo;wrong approach&rdquo; gives the same answer as the correct one. There is nothing to differentiate.
+</div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Dimension</th><th>What to Skew</th><th>Example</th><th>Why It Matters</th></tr></thead>
+  <tbody>
+    <tr><td>Category rates</td><td>Return rates, defect rates</td><td>Category A at 30% vs Category B at 1%</td><td>Wrong joins produce flat average; huge gap from truth</td></tr>
+    <tr><td>Regional penetration</td><td>Membership, completion rates</td><td>Region 1 at 95% vs Region 2 at 50%</td><td>Wrong-denominator error is 5% in one region but 50% in another</td></tr>
+    <tr><td>Quality tiers</td><td>Supplier/vendor quality scores</td><td>40% of suppliers below quality threshold</td><td>Tests multi-hop joins to reach supplier attributes</td></tr>
+    <tr><td>Transaction mix</td><td>Txn types by region</td><td>Type A: 43% in one region vs 9% in another</td><td>Tests filtering + grouping accuracy</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><strong>How to generate:</strong> Use Python with <code>numpy</code> to control distributions per segment. Use <code>np.random.choice(p=[...])</code> with explicit probability vectors per country/category &mdash; never equal weights.</p>
+
+<!-- ============================================================ -->
+<h2 id="gaps"><span class="section-num">2.</span> Structural Data Gaps</h2>
+
+<div class="callout callout-critical">
+  <strong>This is the #1 proven differentiator.</strong>
+  Structural gap detection is the strongest proven differentiator in live benchmarks. Real-world data always has holes &mdash; your benchmark data must too.
+</div>
+
+<p><strong>Why gaps matter:</strong> When a table has zero rows for a specific segment, an agent that blindly aggregates includes zeros (wrong averages, wrong rankings). An agent that detects the gap flags it or excludes correctly. Databricks Genie consistently <em>hallucinates</em> data for missing segments instead of detecting the absence.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Gap Type</th><th>Real-World Reason</th><th>How to Create</th><th>Benchmark Impact</th></tr></thead>
+  <tbody>
+    <tr><td>Program not in all markets</td><td>Feature/program launched market by market</td><td>Delete a transaction type for 2 regions</td><td>Agent includes zeros &rarr; deflated averages</td></tr>
+    <tr><td>No feedback for some products</td><td>Review system doesn&rsquo;t cover all categories</td><td>Delete reviews/feedback for one category</td><td>Agent hallucinates rating vs detects gap</td></tr>
+    <tr><td>No digital tracking in some markets</td><td>Newer markets use manual systems</td><td>Delete tracking records for 1 region</td><td>Agent hallucinates metrics vs flags impossibility</td></tr>
+    <tr><td>Promo/campaign types vary by market</td><td>Not all campaign types available everywhere</td><td>Delete one campaign type for 2 regions</td><td>Agent reports wrong coverage</td></tr>
+    <tr><td>Reason codes not tracked everywhere</td><td>Some markets don&rsquo;t capture reason codes</td><td>NULL out reason column for 1 region</td><td>Agent hallucinates reasons vs detects NULLs</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout callout-tip">
+  <strong>Verification rule:</strong> For each gap, compute the answer with and without the missing data. The difference must be &gt;20%. If the gap doesn&rsquo;t meaningfully change the answer, it won&rsquo;t differentiate agents.
+</div>
+
+<p><strong>Gaps must be realistic.</strong> An auditor or customer should look at the data and say &ldquo;yes, this is how our data looks.&rdquo;</p>
+
+<!-- ============================================================ -->
+<h2 id="patterns"><span class="section-num">3.</span> Competitor Failure Patterns (Ranked)</h2>
+
+<h3><span class="badge badge-t0">TIER 0</span> Structural Gap Detection &mdash; <span class="gap gap-pos">Strongest</span></h3>
+<ul>
+  <li>Table has <strong>zero rows</strong> for a specific segment (country, category)</li>
+  <li>Snowflake detects with LEFT JOINs guided by semantic view</li>
+  <li>Competitor uses INNER JOINs &rarr; silently drops missing segments or <strong>hallucinates values</strong></li>
+  <li><em>Proven across multiple domains:</em> strongest pattern tested; consistently largest scoring gaps</li>
+</ul>
+
+<h3><span class="badge badge-t1">TIER 1</span> Document Grounding + SQL &mdash; <span class="gap gap-pos">Strong</span></h3>
+<ul>
+  <li>Questions requiring BOTH a SQL computation AND a document search</li>
+  <li>Snowflake: single agent context with Cortex Analyst + Cortex Search</li>
+  <li>Competitor: separate SQL agent + Knowledge Agent &rarr; loses coherence when combining</li>
+  <li><em>Trigger phrase:</em> &ldquo;Search our [topic] research for industry benchmarks to compare&rdquo;</li>
+</ul>
+
+<h3><span class="badge badge-t1">TIER 1</span> Cartesian Product Trap &mdash; <span class="gap gap-pos">Strong</span></h3>
+<ul>
+  <li>Ratio of two independently aggregated metrics from different fact tables</li>
+  <li>Naive join creates M&times;N explosion &mdash; values off by 3x or more</li>
+  <li><em>Example:</em> &ldquo;Promotion spend per returned item by category&rdquo;</li>
+</ul>
+
+<h3><span class="badge badge-t2">TIER 2</span> Wrong Denominator &mdash; <span class="gap gap-pos">Moderate</span></h3>
+<ul>
+  <li>Agent uses total count instead of filtered subset (e.g., all records vs only qualifying members)</li>
+  <li><strong>Only works</strong> if penetration varies significantly by segment</li>
+</ul>
+
+<h3><span class="badge badge-t2">TIER 2</span> CTE Planning Failure &mdash; <span class="gap gap-pos">Moderate</span></h3>
+<ul>
+  <li>Executive summary requiring 4+ independent calculations</li>
+  <li>Works better when each sub-query touches different tables</li>
+</ul>
+
+<h3><span class="badge badge-t3">TIER 3</span> Negation / Metric Hallucination &mdash; <span class="gap gap-zero">Weak</span></h3>
+<ul>
+  <li>Unreliable &mdash; competitor often handles negation correctly by splitting queries</li>
+  <li>Metric hallucination affects both platforms equally</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="phrasing"><span class="section-num">4.</span> Question Phrasing Guide</h2>
+
+<h3><span class="badge badge-win">WIN</span> Phrasing patterns that create gaps</h3>
+
+<h4>Pattern A: &ldquo;Are there any [entities] where [metric] CANNOT be calculated &mdash; and why?&rdquo;</h4>
+<p>Forces LEFT JOIN reasoning to detect zero-row segments. Competitor uses INNER JOINs and silently drops or hallucinates. <strong>Strongest observed pattern.</strong></p>
+
+<h4>Pattern B: &ldquo;Search our [research topic] for industry benchmarks to compare&rdquo;</h4>
+<p>Forces combined SQL + document search. Snowflake handles natively; competitor routes to two separate sub-agents. <strong>Consistently strong pattern.</strong></p>
+
+<h4>Pattern C: Business question requiring pre-aggregation</h4>
+<p>Questions where naive joins create cartesian products. Frame as business question, not computation recipe. <strong>Consistently strong pattern.</strong></p>
+
+<h4>Pattern D: Double negation across tables</h4>
+<p>&ldquo;Members who NEVER did X AND NEVER did Y&rdquo; where X and Y are in different tables. <strong>Moderate to strong pattern.</strong></p>
+
+<h3><span class="badge badge-tie">TIE</span> Phrasing that produces no gap (avoid)</h3>
+<ul>
+  <li><strong>Explicit computation recipes</strong> &mdash; &ldquo;Calculate SUM(A)/COUNT(B) grouped by C&rdquo; &rarr; both follow instructions</li>
+  <li><strong>Simple single-join aggregations</strong> &mdash; &ldquo;Completion rate by region&rdquo; &rarr; both handle fine</li>
+  <li><strong>Uniform data questions</strong> &mdash; if rates are identical in every region, no trap fires</li>
+</ul>
+
+<h3><span class="badge badge-lose">LOSE</span> Phrasing that hurts Snowflake (avoid)</h3>
+<ul>
+  <li><strong>Ambiguous metrics</strong> &mdash; &ldquo;average revenue per member&rdquo; could mean per-row avg vs SUM/COUNT(DISTINCT). Fix: be hyper-explicit.</li>
+  <li><strong>Missing semantic view config</strong> &mdash; if a join or metric isn&rsquo;t defined, Cortex Analyst blocks the query (scores 1) while competitor infers joins from column names.</li>
+  <li><strong>Stale ground truth</strong> &mdash; if you modified data but didn&rsquo;t recompute answers, Snowflake gets penalized for being correct.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="scoring"><span class="section-num">5.</span> Scoring Framework</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Dimension</th><th>Score 1&ndash;5</th><th>What It Measures</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Accuracy</strong></td><td>1&ndash;5</td><td>Are the numbers correct? Within 5% of ground truth?</td></tr>
+    <tr><td><strong>Groundedness</strong></td><td>1&ndash;5</td><td>Did the agent use actual data (SQL, doc search) or hallucinate?</td></tr>
+    <tr><td><strong>Relevance</strong></td><td>1&ndash;5</td><td>Did the agent answer the actual question asked?</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><strong>Total: /15 per question.</strong> Use Snowflake Cortex COMPLETE (Claude Sonnet) for automated scoring. Provide question, expected answer with key numbers, agent output, and scoring rubric.</p>
+
+<h4>Ground truth rules:</h4>
+<ul>
+  <li>Always compute from actual loaded data via SQL &mdash; never assume from data generators</li>
+  <li>Include both &ldquo;correct approach&rdquo; and &ldquo;wrong approach&rdquo; values in expected answer</li>
+  <li><strong>Recompute ALL answers after ANY data modification</strong> &mdash; cascading effects are real</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="setup"><span class="section-num">6.</span> Platform Setup Checklist</h2>
+
+<h3>Snowflake Cortex Agent</h3>
+<ol>
+  <li>Load structured data into tables</li>
+  <li>Upload documents to internal stage &rarr; populate DOC table (use direct read for .txt, skip PARSE_DOCUMENT)</li>
+  <li>Create Cortex Search service on document table</li>
+  <li>Create Semantic View via Autopilot, then <strong>manually verify</strong>:
+    <ul>
+      <li>All join relationships exist (especially multi-hop paths: 3&ndash;4 tables deep)</li>
+      <li>SUM metrics for key measures (revenue, refunds, quantity)</li>
+      <li>Descriptive comments on key columns (status values, date meanings, filter conditions)</li>
+    </ul>
+  </li>
+  <li>Create Cortex Agent with both Analyst (semantic view) and Search tools</li>
+  <li>Add general instructions with data rules</li>
+  <li><strong>Do NOT add VQRs</strong> &mdash; tests raw agent capability</li>
+</ol>
+
+<h3>Databricks Genie</h3>
+<ol>
+  <li>Load structured data into Unity Catalog tables</li>
+  <li>Load documents into a doc table</li>
+  <li>Create Genie Space with all tables + general instructions (same data rules)</li>
+  <li>Create Knowledge Assistant agent for document search</li>
+  <li>Create Supervisor agent routing between Genie + Knowledge Assistant</li>
+  <li><strong>Do NOT add sample queries</strong> &mdash; tests raw agent capability</li>
+  <li><strong>Apply identical structural gap DELETEs</strong> as Snowflake for fair comparison</li>
+</ol>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Aspect</th><th>Snowflake</th><th>Databricks</th></tr></thead>
+  <tbody>
+    <tr><td>SQL tool</td><td>Cortex Analyst (semantic view)</td><td>Genie (SQL space)</td></tr>
+    <tr><td>Doc search</td><td>Cortex Search (native, same agent)</td><td>Knowledge Assistant (separate agent)</td></tr>
+    <tr><td>Integration</td><td>Single agent, both tools</td><td>Supervisor routes between two sub-agents</td></tr>
+    <tr><td>Join guidance</td><td>Semantic view relationships</td><td>Infers from column names</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="pitfalls"><span class="section-num">7.</span> Common Pitfalls</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Pitfall</th><th>How to Avoid</th></tr></thead>
+  <tbody>
+    <tr><td>Flat/uniform data</td><td>Verify skew exists before designing questions</td></tr>
+    <tr><td>Stale ground truth</td><td>Recompute ALL answers after ANY data modification</td></tr>
+    <tr><td>Missing semantic view relationships</td><td>Run <code>GET_DDL('SEMANTIC VIEW', ...)</code> and verify all join paths exist</td></tr>
+    <tr><td>Missing semantic view metrics</td><td>Add SUM metrics for all key measures (revenue, cost, quantity, counts)</td></tr>
+    <tr><td>Competitor has stale data</td><td>Apply same structural gap DELETEs to both platforms</td></tr>
+    <tr><td>Agent output truncated</td><td>Set output column to VARCHAR(65000), app substring to 64000</td></tr>
+    <tr><td>Two valid metric sources exist</td><td>Be explicit about which table/column: &ldquo;SUM of detail_amount from line items table&rdquo; not just &ldquo;revenue&rdquo;</td></tr>
+    <tr><td>Ambiguous metric definition</td><td>Specify exact formula: &ldquo;simple average across all rows&rdquo;</td></tr>
+    <tr><td>Both platforms fail</td><td>Question too hard &mdash; simplify or add computation hints</td></tr>
+    <tr><td>Both platforms succeed</td><td>Add structural gap or doc search component</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="results"><span class="section-num">8.</span> Expected Results by Pattern</h2>
+
+<p>Based on live benchmarks across two domains (healthcare and retail), here is the expected performance by pattern type when the playbook is followed correctly:</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Pattern</th><th>Reliability</th><th>SF Performance</th><th>Competitor Performance</th><th>Differentiation</th><th>Typical Competitor Failure Mode</th></tr></thead>
+  <tbody>
+    <tr><td>Structural gap detection</td><td>Highest</td><td class="gap gap-pos">Near-perfect</td><td>Poor</td><td class="gap gap-pos">Very Large</td><td>Hallucinates values for missing segments instead of flagging the gap</td></tr>
+    <tr><td>NULL/missing value detection</td><td>Highest</td><td class="gap gap-pos">Near-perfect</td><td>Very Poor</td><td class="gap gap-pos">Very Large</td><td>Fabricates breakdowns for NULL columns, reports fake percentages</td></tr>
+    <tr><td>Document grounding + SQL</td><td>High</td><td class="gap gap-pos">Strong</td><td>Moderate</td><td class="gap gap-pos">Large</td><td>Returns &ldquo;unable to find&rdquo; or fails to combine structured + unstructured</td></tr>
+    <tr><td>Cartesian product trap</td><td>High</td><td class="gap gap-pos">Strong</td><td>Poor</td><td class="gap gap-pos">Large</td><td>Values inflated or deflated by 3x+ due to cartesian denominator</td></tr>
+    <tr><td>Double negation</td><td>Moderate</td><td class="gap gap-pos">Strong</td><td>Moderate</td><td class="gap gap-pos">Moderate</td><td>Misses one of two NOT conditions, or uses wrong denominator</td></tr>
+    <tr><td>Wrong denominator</td><td>Low</td><td>Good</td><td>Good</td><td class="gap gap-pos">Small</td><td>Inconsistent &mdash; competitor sometimes gets it right</td></tr>
+    <tr><td>CTE / executive summary</td><td>Low</td><td>Moderate</td><td>Moderate</td><td class="gap gap-zero">Minimal</td><td>Partial answers; both platforms struggle with 4+ sub-queries</td></tr>
+    <tr><td>Simple aggregation (no trap)</td><td>N/A</td><td>Strong</td><td>Strong</td><td class="gap gap-neg">None</td><td>No differentiation &mdash; avoid these questions</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h4>Summary:</h4>
+<ol>
+  <li><strong>Snowflake wins the majority of questions</strong> when the playbook is followed (structural gaps + doc grounding + skewed data).</li>
+  <li><strong>Structural gap + NULL detection patterns are the strongest</strong> &mdash; consistently largest scoring gaps.</li>
+  <li><strong>Competitor&rsquo;s consistent failure:</strong> hallucinating data for missing segments rather than detecting and reporting the absence.</li>
+  <li><strong>Snowflake&rsquo;s losses</strong> are typically 1-point margins on simple aggregation questions &mdash; not systemic.</li>
+  <li><strong>Aim for 10&ndash;14 questions</strong> with 8&ndash;10 using Tier 0/1 patterns and 2&ndash;4 as fair baseline comparisons.</li>
+</ol>
+
+<!-- ============================================================ -->
+<h2 id="domains"><span class="section-num">9.</span> Extending to New Domains</h2>
+
+<p>This playbook works for any domain. The key ingredients are:</p>
+<ol>
+  <li><strong>Star schema with 3&ndash;4 hop join paths</strong> (fact &rarr; detail &rarr; dimension &rarr; parent dimension)</li>
+  <li><strong>Unstructured corpus with verifiable numbers</strong> (not generic text)</li>
+  <li><strong>Controlled data skew</strong> on the dimensions that questions target</li>
+  <li><strong>Structural data gaps</strong> that are realistic for the domain</li>
+  <li><strong>Business-framed questions</strong> that don&rsquo;t give away the computation method</li>
+  <li><strong>Ground truth computed from actual loaded data</strong></li>
+</ol>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Domain</th><th>Status</th><th>Suggested Structural Gaps</th></tr></thead>
+  <tbody>
+    <tr><td>Healthcare/Pharma</td><td>Proven</td><td>No lab results in some countries, drug not in published research</td></tr>
+    <tr><td>Retail/E-commerce</td><td>Proven</td><td>No feedback for perishable categories, no digital tracking in newer markets</td></tr>
+    <tr><td>Financial Services</td><td>Suggested</td><td>No credit scores in some regions, product not available in all markets</td></tr>
+    <tr><td>Manufacturing</td><td>Suggested</td><td>No quality inspections for legacy plants, no IoT sensor data for manual lines</td></tr>
+    <tr><td>Telecom</td><td>Suggested</td><td>No network event data for MVNOs, no churn model scores for prepaid</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="footer">
+  <p>Snowflake Cortex Agent Competitive Benchmark Playbook &mdash; v2.0</p>
+  <p>Based on live benchmark results across multiple domains and 28+ evaluated questions.</p>
+  <p>To export as PDF: open this file in a browser and use Print &rarr; Save as PDF.</p>
+</div>
+
+</body>
+</html>
