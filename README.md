@@ -1,8 +1,10 @@
 # Snowflake Cortex Agent vs Databricks Genie — Benchmark
 
-A head-to-head benchmark comparing **Snowflake Cortex Agent** vs **Databricks Genie** on complex clinical trial analytics. Tests both platforms' ability to handle multi-table SQL queries, document search, and hybrid orchestration — then scores every answer with an automated LLM judge.
+A head-to-head benchmark comparing **Snowflake Cortex Agent** vs **Databricks Genie** across two domains: **clinical trials (pharma)** and **APAC retail operations**. Tests both platforms' ability to handle multi-table SQL queries, document search, structural data gap detection, and hybrid orchestration — then scores every answer with an automated LLM judge.
 
 ## Results
+
+### Pharma (Clinical Trials)
 
 | Metric | Snowflake Cortex Agent | Databricks Genie |
 |---|---|---|
@@ -12,6 +14,17 @@ A head-to-head benchmark comparing **Snowflake Cortex Agent** vs **Databricks Ge
 | **Point Gap** | **+73 points** | |
 
 The gap widens with complexity: +4.5 pts on derived metrics, **+7.0 pts on executive synthesis**.
+
+### Retail (APAC Operations)
+
+| Metric | Snowflake Cortex Agent | Databricks Genie |
+|---|---|---|
+| **Total Score** | **195 / 210** (92.9%) | **101 / 210** (48.1%) |
+| **Average per Question** | **13.9 / 15** | **7.2 / 15** |
+| **SF Wins** | **12** | **2** (by 1 pt each) |
+| **Point Gap** | **+94 points** | |
+
+Structural gap detection is the strongest differentiator: SF correctly identifies missing data segments while DBX hallucinates values.
 
 See [`pharma/docs/benchmark_analysis.md`](pharma/docs/benchmark_analysis.md) for the full 14-question breakdown with failure patterns.
 
@@ -137,6 +150,22 @@ pharma/
     ├── sf_02_create_agent.sql         # Cortex Search services + Semantic View + Agent
     ├── dbx_01_load_data.ipynb         # Databricks data loading notebook
     └── dbx_02_agent_setup.md          # Genie setup: instructions, metric views, teardown
+
+retail/
+├── data/v2/                           # Compressed data files
+│   ├── *.csv.gz                       # 12 gzipped CSV tables (~300MB total)
+│   ├── docs_batched.tar.gz            # 200 batched .txt document files
+│   └── ground_truth.json              # Computed ground truth for all 14 questions
+└── setup/
+    ├── sf_01_create_schema_v2.sql     # Snowflake DDL + CSV loading
+    ├── sf_02_upload_docs.sql          # Document ingestion into DOC_DOCUMENT
+    ├── sf_03_cortex_search.sql        # Cortex Search service creation
+    ├── sf_04_agent_instructions.md    # Semantic view + agent setup guide
+    ├── dbx_01_load_data.ipynb         # Databricks data loading notebook
+    └── dbx_02_agent_setup.md          # Genie + Knowledge Assistant setup
+
+BENCHMARK_PLAYBOOK.md                  # Project-specific playbook with results
+BENCHMARK_PLAYBOOK_v2.html             # Generalized playbook for any SE (print to PDF)
 ```
 
 ## Setup
@@ -157,6 +186,27 @@ pharma/
 2. Run `setup/dbx_01_load_data.ipynb` to create tables
 3. Add 16 metric views to Genie Space (YAML in `setup/dbx_02_agent_setup.md`)
 4. Paste General Instructions into Genie Space (in `setup/dbx_02_agent_setup.md`)
+
+### Retail Domain
+
+#### Data
+
+Decompress the retail data files:
+```bash
+cd retail/data/v2
+gunzip *.csv.gz
+# For fact_order_line (split into 2 parts):
+# Concatenate parts: head -1 fact_order_line_part_aa.csv > fact_order_line.csv
+# tail -n +2 fact_order_line_part_aa.csv >> fact_order_line.csv
+# tail -n +2 fact_order_line_part_ab.csv >> fact_order_line.csv
+tar xzf docs_batched.tar.gz
+```
+
+#### Snowflake
+Run `retail/setup/sf_01` through `sf_04` SQL scripts in order, then apply structural gap DELETEs (see `retail/setup/sf_04_agent_instructions.md`).
+
+#### Databricks
+Run `retail/setup/dbx_01_load_data.ipynb`, then follow `retail/setup/dbx_02_agent_setup.md`. Apply the same structural gap DELETEs.
 
 ### Evaluator App
 

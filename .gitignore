@@ -42,6 +42,11 @@ live_compare/dist/
 pharma/data/*.csv
 pharma/data/docs/
 
+# Retail raw data (compressed versions are tracked)
+retail/data/v2/*.csv
+retail/data/v2/docs/
+retail/data/v2/docs_batched/
+
 # Environment variables
 .env
 .env.*
