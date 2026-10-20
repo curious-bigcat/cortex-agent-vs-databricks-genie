@@ -266,7 +266,7 @@ Rules: Numbers within 5% tolerance are acceptable. No penalty for formatting, ca
 **DBX Failure Pattern:** cartesian-product + CTE-planning-failure
 **Traps:** ALL
 
-> Prepare a board-level executive summary of our clinical portfolio with hard numbers, not just narratives. Cover: (1) portfolio health — enrollment rates by phase and country with trends over time, (2) safety — our serious AE rates versus what published drug labels cite as expected, (3) operations — which sites are performing best and worst based on quality scores and protocol adherence, (4) regulatory pipeline — what percentage of our submissions are getting approved and how long is the process taking, (5) research intelligence — the most important findings from published research relevant to our therapeutic areas. Give me specific numbers for everything.
+> Prepare a board-level, data-driven executive summary of our clinical portfolio, covering enrollment trends, safety benchmarks against published drug labels, clinical site performance, regulatory approval rates and timelines, and key research findings. Support every insight with specific numbers, trends, credible sources, and actionable recommendations. Clearly flag data gaps and distinguish actual results from external benchmarks.
 
 **Expected approach:** Five parallel complex queries each requiring derived metrics and multi-table joins, PLUS multi-source document search, synthesized into executive format. The ultimate stress test.
 
